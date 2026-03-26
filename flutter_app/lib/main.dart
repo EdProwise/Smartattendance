@@ -7,6 +7,8 @@ import 'screens/attendance_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/forgot_password_screen.dart';
+import 'screens/splash_screen.dart';
+import 'screens/stats_screen.dart';
 import 'services/auth_service.dart';
 
 void main() {
@@ -14,19 +16,27 @@ void main() {
 }
 
 final _router = GoRouter(
-  initialLocation: '/login',
+  initialLocation: '/splash',
   redirect: (context, state) async {
+    final loc = state.matchedLocation;
+
+    // Splash and home are always accessible (home shows guest view when not logged in)
+    if (loc == '/splash' || loc == '/') return null;
+
     final user = await AuthService.getSession();
     final loggedIn = user != null;
-    final onAuth = state.matchedLocation == '/login' ||
-        state.matchedLocation == '/register' ||
-        state.matchedLocation == '/forgot-password';
+    final onAuth = loc == '/login' ||
+        loc == '/register' ||
+        loc == '/forgot-password';
 
+    // Functional screens require login
     if (!loggedIn && !onAuth) return '/login';
+    // Already logged in — bounce away from auth pages back to home
     if (loggedIn && onAuth) return '/';
     return null;
   },
   routes: [
+    GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
     GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
     GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
     GoRoute(path: '/forgot-password', builder: (_, __) => const ForgotPasswordScreen()),
@@ -34,6 +44,7 @@ final _router = GoRouter(
     GoRoute(path: '/scan', builder: (_, __) => const ScanScreen()),
     GoRoute(path: '/admin', builder: (_, __) => const AdminScreen()),
     GoRoute(path: '/attendance', builder: (_, __) => const AttendanceScreen()),
+    GoRoute(path: '/stats', builder: (_, __) => const StatsScreen()),
   ],
 );
 

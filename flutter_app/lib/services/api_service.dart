@@ -4,7 +4,7 @@ import '../models/models.dart';
 
 class ApiService {
   // Change this to your backend URL (ngrok URL or local IP for device testing)
-  static const String baseUrl = 'http://localhost:8080';
+  static const String baseUrl = 'https://smart-attendance-backend-production-0948.up.railway.app';
 
   static final _client = http.Client();
 
