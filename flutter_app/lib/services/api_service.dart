@@ -4,7 +4,7 @@ import '../models/models.dart';
 
 class ApiService {
   // Change this to your backend URL (ngrok URL or local IP for device testing)
-  static const String baseUrl = 'http://localhost:3002';
+  static const String baseUrl = 'http://localhost:8080';
 
   static final _client = http.Client();
 

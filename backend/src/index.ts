@@ -13,7 +13,7 @@ import { User } from './models/User.js';
 
 const MONGO_URI =
   process.env.MONGO_URI ||
-  'mongodb+srv://edprowise_db_user:PTx7QbEglhESE9Ie@cluster0.wcjw48r.mongodb.net/Smartattendance';
+  'mongodb://edprowise_db_user:PTx7QbEglhESE9Ie@ac-hrlyz9q-shard-00-00.wcjw48r.mongodb.net:27017,ac-hrlyz9q-shard-00-01.wcjw48r.mongodb.net:27017,ac-hrlyz9q-shard-00-02.wcjw48r.mongodb.net:27017/Smartattendance?ssl=true&replicaSet=atlas-zshpxx-shard-0&authSource=admin&retryWrites=true&w=majority';
 
 mongoose
   .connect(MONGO_URI)
