@@ -1,0 +1,2 @@
+E:/UI Project/EdProwise/Smart Attendance/Smartattendance/flutter_app/android/app/.cxx/debug/4663561c/x86_64/CMakeFiles/edit_cache.dir
+E:/UI Project/EdProwise/Smart Attendance/Smartattendance/flutter_app/android/app/.cxx/debug/4663561c/x86_64/CMakeFiles/rebuild_cache.dir

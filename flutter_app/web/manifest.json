@@ -1,11 +1,11 @@
 {
-    "name": "smart_attendance",
-    "short_name": "smart_attendance",
+    "name": "Smart Attendance",
+    "short_name": "Smart Att",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#29B6F6",
+    "theme_color": "#29B6F6",
+    "description": "Smart Attendance – Face Recognition Attendance System",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

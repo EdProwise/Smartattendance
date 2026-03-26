@@ -18,19 +18,77 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="Smart Attendance – Face Recognition Attendance System">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="smart_attendance">
+  <meta name="apple-mobile-web-app-title" content="Smart Attendance">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  <!-- Preload Material Icons font for favicon generation -->
+  <link rel="preload" as="font" crossorigin="anonymous"
+        href="https://fonts.gstatic.com/s/materialicons/v140/flUhRq6tzZclQEJ-Vdg-IuiaDsNc.woff2"
+        type="font/woff2">
 
-  <title>smart_attendance</title>
+  <!-- Fallback static favicon (replaced dynamically once font loads) -->
+  <link id="app-favicon" rel="icon" type="image/png" href="icons/Icon-192.png"/>
+
+  <title>Smart Attendance</title>
   <link rel="manifest" href="manifest.json">
+
+  <script>
+    // Generate favicon using the real Material Icons "fingerprint" glyph (U+E90D)
+    // so the browser tab icon exactly matches Icons.fingerprint in Flutter.
+    (function () {
+      function drawFavicon() {
+        var sz = 64;
+        var cvs = document.createElement('canvas');
+        cvs.width = cvs.height = sz;
+        var ctx = cvs.getContext('2d');
+
+        // Light blue rounded-square background (#29B6F6)
+        var r = sz * 0.22;
+        ctx.beginPath();
+        ctx.moveTo(r, 0);
+        ctx.lineTo(sz - r, 0);
+        ctx.arcTo(sz, 0,  sz, r,    r);
+        ctx.lineTo(sz, sz - r);
+        ctx.arcTo(sz, sz, sz - r, sz, r);
+        ctx.lineTo(r, sz);
+        ctx.arcTo(0,  sz, 0,  sz - r, r);
+        ctx.lineTo(0, r);
+        ctx.arcTo(0,  0,  r,  0,    r);
+        ctx.closePath();
+        ctx.fillStyle = '#29B6F6';
+        ctx.fill();
+
+        // Draw fingerprint glyph from Material Icons font
+        var iconSize = Math.round(sz * 0.66);
+        ctx.font = iconSize + 'px "Material Icons"';
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('\ue90d', sz / 2, sz / 2 + 1);
+
+        var link = document.getElementById('app-favicon');
+        link.type = 'image/x-icon';
+        link.href = cvs.toDataURL('image/png');
+      }
+
+      // Load Material Icons font, then draw
+      var fontUrl = 'url(https://fonts.gstatic.com/s/materialicons/v140/flUhRq6tzZclQEJ-Vdg-IuiaDsNc.woff2)';
+      if (typeof FontFace !== 'undefined') {
+        var face = new FontFace('Material Icons', fontUrl);
+        face.load().then(function (loaded) {
+          document.fonts.add(loaded);
+          drawFavicon();
+        }).catch(function () {
+          // Font failed to load — favicon stays as the PNG fallback
+        });
+      }
+    })();
+  </script>
 </head>
 <body>
   <!--

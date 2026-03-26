@@ -1,12 +1,12 @@
-import 'dart:async';
 import 'dart:convert';
-import 'dart:html' as html;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/camera_service.dart';
 import '../services/excel_helper.dart';
-import '../services/web_camera_service.dart';
+import '../services/file_io_service.dart';
+import '../widgets/platform_camera_view.dart';
 
 
 class AdminScreen extends StatefulWidget {
@@ -25,7 +25,7 @@ class _AdminScreenState extends State<AdminScreen> {
   @override
   void initState() {
     super.initState();
-    WebCameraService.enroll.ensureRegistered();
+    CameraService.enroll.init();
     _fetchEmployees();
   }
 
@@ -95,50 +95,45 @@ class _AdminScreenState extends State<AdminScreen> {
       context: context,
       builder: (_) => _AddEmployeeDialog(
         onAdd: (data) async {
-            await ApiService.createEmployee(
-              employeeId: data['employeeId']!,
-              name: data['name']!,
-              designation: data['designation']!,
-              grade: data['grade']!,
-              category: data['category']!,
-              gender: data['gender']!,
-              mobile: data['mobile']!,
-            );
-            _fetchEmployees();
-          },
+          await ApiService.createEmployee(
+            employeeId: data['employeeId']!,
+            name: data['name']!,
+            designation: data['designation']!,
+            grade: data['grade']!,
+            category: data['category']!,
+            gender: data['gender']!,
+            mobile: data['mobile']!,
+          );
+          _fetchEmployees();
+        },
       ),
     );
   }
 
   // ─── Excel Export ────────────────────────────────────────────────────────────
 
-  void _exportToExcel() {
+  Future<void> _exportToExcel() async {
     final bytes = ExcelHelper.exportEmployees(_filteredEmployees);
-    final blob = html.Blob([bytes], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    html.AnchorElement(href: url)
-      ..setAttribute('download', 'employees_${DateTime.now().toIso8601String().substring(0, 10)}.xlsx')
-      ..click();
-    html.Url.revokeObjectUrl(url);
+    final filename =
+        'employees_${DateTime.now().toIso8601String().substring(0, 10)}.xlsx';
+    final savedPath = await FileIoService.instance.saveExcelFile(bytes, filename);
+    if (mounted && savedPath != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Exported: $savedPath'),
+        backgroundColor: Colors.green,
+      ));
+    }
   }
 
   // ─── Excel Import ────────────────────────────────────────────────────────────
 
   Future<void> _importFromExcel() async {
-    final input = html.FileUploadInputElement()..accept = '.xlsx,.xls';
-    input.click();
-    await input.onChange.first;
-    final file = input.files?.first;
-    if (file == null) return;
+    final picked = await FileIoService.instance.pickExcelFile();
+    if (picked == null) return;
 
-    final reader = html.FileReader();
-    reader.readAsArrayBuffer(file);
-    await reader.onLoad.first;
-
-    final bytes = Uint8List.view(reader.result as ByteBuffer);
     List<Map<String, dynamic>> employees;
     try {
-      employees = ExcelHelper.parseEmployees(bytes);
+      employees = ExcelHelper.parseEmployees(picked.bytes);
     } catch (e) {
       _showError('Invalid Excel file: $e');
       return;
@@ -203,12 +198,11 @@ class _AdminScreenState extends State<AdminScreen> {
       ),
       body: Column(
         children: [
-          // Search bar
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: TextField(
               decoration: InputDecoration(
-                  hintText: 'Search by name, ID, designation, mobile…',
+                hintText: 'Search by name, ID, designation, mobile…',
                 prefixIcon: const Icon(Icons.search),
                 filled: true,
                 fillColor: Colors.white,
@@ -221,7 +215,6 @@ class _AdminScreenState extends State<AdminScreen> {
               onChanged: (v) => setState(() => _search = v),
             ),
           ),
-          // Count bar
           if (!_loading && _error == null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -232,7 +225,6 @@ class _AdminScreenState extends State<AdminScreen> {
                 ],
               ),
             ),
-          // List
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -274,7 +266,7 @@ class _AdminScreenState extends State<AdminScreen> {
 // ─── Add Employee Dialog ───────────────────────────────────────────────────────
 
 class _AddEmployeeDialog extends StatefulWidget {
-  final Future<void> Function(Map<String, String> data) onAdd; // throws on failure
+  final Future<void> Function(Map<String, String> data) onAdd;
   const _AddEmployeeDialog({required this.onAdd});
 
   @override
@@ -340,7 +332,6 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header
             Container(
               decoration: const BoxDecoration(
                 color: Color(0xFF854CF4),
@@ -362,7 +353,6 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
                 ],
               ),
             ),
-            // Form
             Flexible(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
@@ -371,52 +361,50 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                        _sectionLabel('Basic Information'),
-                        const SizedBox(height: 10),
-                        Row(children: [
-                          Expanded(child: _field(_empIdCtrl, 'Employee ID *', Icons.badge,
-                              validator: _required)),
-                          const SizedBox(width: 12),
-                          Expanded(child: _field(_nameCtrl, 'Full Name *', Icons.person,
-                              validator: _required)),
-                        ]),
-                        const SizedBox(height: 12),
-                        _field(_mobileCtrl, 'Mobile Number', Icons.phone,
-                            keyboard: TextInputType.phone),
-                        const SizedBox(height: 20),
-                        _sectionLabel('Job Details'),
-                        const SizedBox(height: 10),
-                        Row(children: [
-                          Expanded(child: _field(_designationCtrl, 'Designation', Icons.work)),
-                          const SizedBox(width: 12),
-                          Expanded(child: _field(_gradeCtrl, 'Grade', Icons.grade)),
-                        ]),
-                        const SizedBox(height: 12),
-                        Row(children: [
-                          Expanded(child: _field(_categoryCtrl, 'Category', Icons.category)),
-                          const SizedBox(width: 12),
-                          Expanded(child: _field(_genderCtrl, 'Gender', Icons.person_outline)),
-                        ]),
-                        const SizedBox(height: 24),
-                        // Inline error message
-                        if (_errorMsg != null) ...[
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            margin: const EdgeInsets.only(bottom: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              border: Border.all(color: Colors.red.shade200),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(children: [
-                              Icon(Icons.error_outline, color: Colors.red.shade700, size: 18),
-                              const SizedBox(width: 8),
-                              Expanded(child: Text(_errorMsg!,
-                                  style: TextStyle(color: Colors.red.shade700, fontSize: 13))),
-                            ]),
+                      _sectionLabel('Basic Information'),
+                      const SizedBox(height: 10),
+                      Row(children: [
+                        Expanded(child: _field(_empIdCtrl, 'Employee ID *', Icons.badge,
+                            validator: _required)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _field(_nameCtrl, 'Full Name *', Icons.person,
+                            validator: _required)),
+                      ]),
+                      const SizedBox(height: 12),
+                      _field(_mobileCtrl, 'Mobile Number', Icons.phone,
+                          keyboard: TextInputType.phone),
+                      const SizedBox(height: 20),
+                      _sectionLabel('Job Details'),
+                      const SizedBox(height: 10),
+                      Row(children: [
+                        Expanded(child: _field(_designationCtrl, 'Designation', Icons.work)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _field(_gradeCtrl, 'Grade', Icons.grade)),
+                      ]),
+                      const SizedBox(height: 12),
+                      Row(children: [
+                        Expanded(child: _field(_categoryCtrl, 'Category', Icons.category)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _field(_genderCtrl, 'Gender', Icons.person_outline)),
+                      ]),
+                      const SizedBox(height: 24),
+                      if (_errorMsg != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            border: Border.all(color: Colors.red.shade200),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                        ],
-                        // Actions
+                          child: Row(children: [
+                            Icon(Icons.error_outline, color: Colors.red.shade700, size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text(_errorMsg!,
+                                style: TextStyle(color: Colors.red.shade700, fontSize: 13))),
+                          ]),
+                        ),
+                      ],
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
@@ -476,8 +464,6 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
 }
 
 // ─── Enroll Dialog ────────────────────────────────────────────────────────────
-// Flow: Choice screen → Camera (live viewfinder → capture → preview)
-//                     → Gallery (file picker → preview)
 
 enum _EnrollStep { choice, cameraStarting, cameraLive, preview }
 
@@ -493,27 +479,41 @@ class _EnrollCameraDialogState extends State<_EnrollCameraDialog> {
   _EnrollStep _step = _EnrollStep.choice;
   String? _capturedDataUrl;
   String? _capturedBase64;
-  // 'camera' or 'gallery' — used by Retake to know where to go back
   String _source = '';
 
   @override
   void dispose() {
-    WebCameraService.enroll.stopCamera();
+    CameraService.enroll.stopCamera();
     super.dispose();
   }
-
-  // ── Camera flow ─────────────────────────────────────────────────────────────
 
   Future<void> _startCamera() async {
     setState(() { _step = _EnrollStep.cameraStarting; _source = 'camera'; });
     try {
-      await WebCameraService.enroll.startCamera(frontFacing: true);
-      if (mounted) setState(() { _step = _EnrollStep.cameraLive; });
+      if (CameraService.enroll.supportsLivePreview) {
+        // Web: start live in-app stream
+        await CameraService.enroll.startLiveCamera(frontFacing: true);
+        if (mounted) setState(() { _step = _EnrollStep.cameraLive; });
+      } else {
+        // Mobile: open native OS camera
+        final result = await CameraService.enroll.captureFromCamera(frontFacing: true);
+        if (mounted) {
+          if (result != null) {
+            setState(() {
+              _capturedBase64 = result.base64;
+              _capturedDataUrl = result.dataUrl;
+              _step = _EnrollStep.preview;
+            });
+          } else {
+            setState(() { _step = _EnrollStep.choice; });
+          }
+        }
+      }
     } catch (e) {
       if (mounted) {
         setState(() { _step = _EnrollStep.choice; });
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Camera access denied. Please allow camera permission and try again.'),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Camera failed: $e'),
           backgroundColor: Colors.red,
         ));
       }
@@ -521,74 +521,26 @@ class _EnrollCameraDialogState extends State<_EnrollCameraDialog> {
   }
 
   void _capture() {
-    final base64 = WebCameraService.enroll.captureFrame();
-    final dataUrl = WebCameraService.enroll.captureFrameAsDataUrl();
-    WebCameraService.enroll.stopCamera();
-    if (base64 == null) return;
+    final result = CameraService.enroll.captureFrame();
+    CameraService.enroll.stopCamera();
+    if (result == null) return;
     setState(() {
-      _capturedBase64 = base64;
-      _capturedDataUrl = dataUrl;
+      _capturedBase64 = result.base64;
+      _capturedDataUrl = result.dataUrl;
       _step = _EnrollStep.preview;
     });
   }
 
-  // ── Gallery flow ─────────────────────────────────────────────────────────────
-
   Future<void> _pickFromGallery() async {
     setState(() { _source = 'gallery'; });
-
-    // Must be attached to DOM before clicking — detached inputs suppress onChange
-    final input = html.FileUploadInputElement()
-      ..accept = 'image/*'
-      ..style.display = 'none';
-    html.document.body!.append(input);
-
-    try {
-      final completer = Completer<html.File?>();
-      // Listen BEFORE click so we never miss the event
-      input.onChange.listen((event) {
-        final file = input.files?.isNotEmpty == true ? input.files!.first : null;
-        if (!completer.isCompleted) completer.complete(file);
-      });
-      input.click();
-
-      final file = await completer.future.timeout(const Duration(minutes: 5));
-      if (!mounted || file == null) return;
-
-      // Use readAsDataUrl — it's the only FileReader method that works
-      // reliably on Flutter Web. Result is "data:image/jpeg;base64,XXXX"
-      final reader = html.FileReader();
-      reader.readAsDataUrl(file);
-      await reader.onLoad.first;
-
-      final dataUrl = reader.result as String;
-      // Strip the "data:image/...;base64," prefix to get pure base64
-      final commaIndex = dataUrl.indexOf(',');
-      if (commaIndex == -1) return;
-      final pureBase64 = dataUrl.substring(commaIndex + 1);
-
-      if (mounted) {
-        setState(() {
-          _capturedBase64 = pureBase64;
-          _capturedDataUrl = dataUrl;
-          _step = _EnrollStep.preview;
-        });
-      }
-    } on TimeoutException {
-      // User never picked a file — stay on choice screen
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed to read image: $e'),
-          backgroundColor: Colors.red,
-        ));
-      }
-    } finally {
-      input.remove();
-    }
+    final picked = await FileIoService.instance.pickImageFromGallery();
+    if (!mounted || picked == null) return;
+    setState(() {
+      _capturedBase64 = picked.base64;
+      _capturedDataUrl = picked.dataUrl;
+      _step = _EnrollStep.preview;
+    });
   }
-
-  // ── Retake ───────────────────────────────────────────────────────────────────
 
   void _retake() {
     setState(() { _capturedBase64 = null; _capturedDataUrl = null; });
@@ -600,11 +552,9 @@ class _EnrollCameraDialogState extends State<_EnrollCameraDialog> {
   }
 
   void _cancel() {
-    WebCameraService.enroll.stopCamera();
+    CameraService.enroll.stopCamera();
     Navigator.pop(context, null);
   }
-
-  // ── Build ────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -617,7 +567,6 @@ class _EnrollCameraDialogState extends State<_EnrollCameraDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header
             Container(
               color: const Color(0xFF854CF4),
               padding: const EdgeInsets.fromLTRB(20, 16, 8, 16),
@@ -631,14 +580,13 @@ class _EnrollCameraDialogState extends State<_EnrollCameraDialog> {
                 ],
               ),
             ),
-            // Body
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 220),
               child: switch (_step) {
-                _EnrollStep.choice       => _ChoiceScreen(key: const ValueKey('choice'), onCamera: _startCamera, onGallery: _pickFromGallery),
+                _EnrollStep.choice         => _ChoiceScreen(key: const ValueKey('choice'), onCamera: _startCamera, onGallery: _pickFromGallery),
                 _EnrollStep.cameraStarting => _LoadingBody(key: const ValueKey('starting'), label: 'Starting camera…'),
-                _EnrollStep.cameraLive   => _LiveViewfinder(key: const ValueKey('live'), onCapture: _capture, onCancel: _cancel),
-                _EnrollStep.preview      => _CapturePreview(
+                _EnrollStep.cameraLive     => _LiveViewfinder(key: const ValueKey('live'), onCapture: _capture, onCancel: _cancel),
+                _EnrollStep.preview        => _CapturePreview(
                     key: const ValueKey('preview'),
                     dataUrl: _capturedDataUrl,
                     source: _source,
@@ -675,16 +623,14 @@ class _ChoiceScreen extends StatelessWidget {
             style: TextStyle(color: Colors.black54, fontSize: 13)),
         const SizedBox(height: 32),
         Row(children: [
-          // Camera option
           Expanded(child: _OptionCard(
             icon: Icons.camera_alt,
             label: 'Through Camera',
-            description: 'Take a live photo using your webcam',
+            description: 'Take a live photo using your camera',
             color: const Color(0xFF854CF4),
             onTap: onCamera,
           )),
           const SizedBox(width: 16),
-          // Gallery option
           Expanded(child: _OptionCard(
             icon: Icons.photo_library,
             label: 'Through Gallery',
@@ -756,7 +702,7 @@ class _LoadingBody extends StatelessWidget {
   }
 }
 
-// ─── Live Viewfinder ─────────────────────────────────────────────────────────
+// ─── Live Viewfinder (web only) ───────────────────────────────────────────────
 
 class _LiveViewfinder extends StatelessWidget {
   final VoidCallback onCapture;
@@ -767,7 +713,7 @@ class _LiveViewfinder extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(mainAxisSize: MainAxisSize.min, children: [
       SizedBox(height: 320, child: Stack(fit: StackFit.expand, children: [
-        HtmlElementView(viewType: WebCameraService.enroll.viewType),
+        buildCameraView(CameraService.enroll.viewType),
         Center(child: Container(
           width: 180, height: 220,
           decoration: BoxDecoration(
@@ -814,7 +760,7 @@ class _LiveViewfinder extends StatelessWidget {
   }
 }
 
-// ─── Capture Preview ─────────────────────────────────────────────────────────
+// ─── Capture Preview ──────────────────────────────────────────────────────────
 
 class _CapturePreview extends StatelessWidget {
   final String? dataUrl;
@@ -903,7 +849,6 @@ class _EmployeeTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
-            // ── Avatar / Photo ─────────────────────────────────────────────
             Container(
               width: 60,
               height: 60,
@@ -924,7 +869,6 @@ class _EmployeeTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 14),
-            // ── Details ────────────────────────────────────────────────────
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
@@ -960,7 +904,6 @@ class _EmployeeTile extends StatelessWidget {
                 _EnrollBadge(enrolled: employee.isEnrolled),
               ]),
             ),
-            // ── Actions ────────────────────────────────────────────────────
             Column(children: [
               IconButton(
                 icon: Icon(
@@ -985,7 +928,6 @@ class _EmployeeTile extends StatelessWidget {
   Uint8List? _decodePhoto(String? base64str) {
     if (base64str == null || base64str.isEmpty) return null;
     try {
-      // Strip data URI prefix if present
       final str = base64str.contains(',') ? base64str.split(',').last : base64str;
       return base64Decode(str);
     } catch (_) {

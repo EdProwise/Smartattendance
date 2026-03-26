@@ -1,10 +1,9 @@
 import 'dart:convert';
-import 'dart:html' as html;
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/api_service.dart';
-import '../services/web_camera_service.dart';
+import '../services/camera_service.dart';
+import '../services/file_io_service.dart';
+import '../widgets/platform_camera_view.dart';
 
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key});
@@ -18,83 +17,70 @@ class _ScanScreenState extends State<ScanScreen> {
   bool _cameraLoading = false;
   bool _scanning = false;
   Map<String, dynamic>? _result;
-  String? _capturedDataUrl; // web preview
+  String? _capturedDataUrl;
 
   @override
   void initState() {
     super.initState();
-    if (kIsWeb) {
-        WebCameraService.scan.ensureRegistered();
-      }
+    CameraService.scan.init();
   }
 
   @override
   void dispose() {
-    if (kIsWeb) WebCameraService.scan.stopCamera();
+    CameraService.scan.stopCamera();
     super.dispose();
   }
 
   Future<void> _startCamera() async {
     setState(() { _cameraLoading = true; });
     try {
-      await WebCameraService.scan.startCamera(frontFacing: true);
-      if (mounted) setState(() { _cameraActive = true; _cameraLoading = false; });
+      if (CameraService.scan.supportsLivePreview) {
+        // Web: show live in-app viewfinder
+        await CameraService.scan.startLiveCamera(frontFacing: true);
+        if (mounted) setState(() { _cameraActive = true; _cameraLoading = false; });
+      } else {
+        // Mobile: open native OS camera, get image immediately
+        final result = await CameraService.scan.captureFromCamera(frontFacing: true);
+        if (mounted) {
+          setState(() { _cameraLoading = false; });
+          if (result != null) {
+            setState(() { _capturedDataUrl = result.dataUrl; });
+            await _processScan(result.base64);
+          }
+        }
+      }
     } catch (e) {
       if (mounted) {
         setState(() { _cameraLoading = false; });
-        _showError('Camera access denied. Please allow camera permission in browser and try again.');
+        _showError('Camera access denied. Please allow camera permission and try again.');
       }
     }
   }
 
   void _captureAndScan() {
-    final base64 = WebCameraService.scan.captureFrame();
-    final dataUrl = WebCameraService.scan.captureFrameAsDataUrl();
-    WebCameraService.scan.stopCamera();
-    if (base64 == null) {
+    final result = CameraService.scan.captureFrame();
+    CameraService.scan.stopCamera();
+    if (result == null) {
       _showError('Failed to capture image. Please try again.');
       return;
     }
     setState(() {
       _cameraActive = false;
-      _capturedDataUrl = dataUrl;
+      _capturedDataUrl = result.dataUrl;
     });
-    _processScan(base64);
+    _processScan(result.base64);
   }
 
   void _stopCamera() {
-    WebCameraService.scan.stopCamera();
+    CameraService.scan.stopCamera();
     setState(() { _cameraActive = false; _cameraLoading = false; });
   }
 
   Future<void> _pickFromGallery() async {
-    // Use dart:html FileReader directly to avoid dart:io _Namespace error on web.
-    final input = html.FileUploadInputElement()..accept = 'image/*';
-    input.click();
-
-    // Wait for the user to select a file (onChange fires when selection is made)
-    await input.onChange.first.timeout(
-      const Duration(minutes: 2),
-      onTimeout: () => throw Exception('File selection timed out'),
-    );
-
-    final file = input.files?.first;
-    if (file == null) return;
-
-    // Read file as Data URL for preview AND as ArrayBuffer for base64 encoding
-    final readerDataUrl = html.FileReader();
-    readerDataUrl.readAsDataUrl(file);
-    await readerDataUrl.onLoad.first;
-    final dataUrl = readerDataUrl.result as String;
-
-    final readerBuffer = html.FileReader();
-    readerBuffer.readAsArrayBuffer(file);
-    await readerBuffer.onLoad.first;
-    final byteBuffer = readerBuffer.result as ByteBuffer;
-    final base64Image = base64Encode(Uint8List.view(byteBuffer));
-
-    setState(() { _capturedDataUrl = dataUrl; });
-    await _processScan(base64Image);
+    final picked = await FileIoService.instance.pickImageFromGallery();
+    if (picked == null) return;
+    setState(() { _capturedDataUrl = picked.dataUrl; });
+    await _processScan(picked.base64);
   }
 
   Future<void> _processScan(String base64Image) async {
@@ -117,7 +103,7 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   void _reset() {
-    if (kIsWeb) WebCameraService.scan.stopCamera();
+    CameraService.scan.stopCamera();
     setState(() {
       _result = null;
       _capturedDataUrl = null;
@@ -159,7 +145,7 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 }
 
-// ─── Live Camera Viewfinder ──────────────────────────────────────────────────
+// ─── Live Camera Viewfinder (web only) ───────────────────────────────────────
 
 class _CameraViewfinderView extends StatelessWidget {
   final VoidCallback onCapture;
@@ -174,11 +160,9 @@ class _CameraViewfinderView extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Live video feed via HtmlElementView
               ClipRect(
-                child:                 HtmlElementView(viewType: WebCameraService.scan.viewType),
+                child: buildCameraView(CameraService.scan.viewType),
               ),
-              // Face guide overlay
               Center(
                 child: Container(
                   width: 240,
@@ -187,10 +171,8 @@ class _CameraViewfinderView extends StatelessWidget {
                     border: Border.all(color: const Color(0xFF854CF4), width: 3),
                     borderRadius: BorderRadius.circular(120),
                   ),
-                  child: null,
                 ),
               ),
-              // Instruction text at the top
               Positioned(
                 top: 24,
                 left: 0,
@@ -212,14 +194,12 @@ class _CameraViewfinderView extends StatelessWidget {
             ],
           ),
         ),
-        // Bottom controls
         Container(
           color: Colors.black,
           padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 32),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              // Cancel
               GestureDetector(
                 onTap: onCancel,
                 child: const Column(
@@ -231,7 +211,6 @@ class _CameraViewfinderView extends StatelessWidget {
                   ],
                 ),
               ),
-              // Capture shutter button
               GestureDetector(
                 onTap: onCapture,
                 child: Container(
@@ -245,7 +224,6 @@ class _CameraViewfinderView extends StatelessWidget {
                   child: const Icon(Icons.camera_alt, color: Colors.white, size: 32),
                 ),
               ),
-              // Flip camera placeholder (visual balance)
               const Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -262,7 +240,7 @@ class _CameraViewfinderView extends StatelessWidget {
   }
 }
 
-// ─── Capture Options Screen ──────────────────────────────────────────────────
+// ─── Capture Options ──────────────────────────────────────────────────────────
 
 class _CaptureView extends StatelessWidget {
   final bool cameraLoading;
@@ -320,7 +298,7 @@ class _CaptureView extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : const Icon(Icons.camera_alt),
-                label: Text(cameraLoading ? 'Starting Camera...' : 'Open Camera'),
+                label: Text(cameraLoading ? 'Opening Camera...' : 'Open Camera'),
               ),
             ),
             const SizedBox(height: 12),
@@ -344,7 +322,7 @@ class _CaptureView extends StatelessWidget {
   }
 }
 
-// ─── Scanning Indicator ──────────────────────────────────────────────────────
+// ─── Scanning Indicator ───────────────────────────────────────────────────────
 
 class _ScanningView extends StatelessWidget {
   const _ScanningView();
@@ -366,11 +344,9 @@ class _ScanningView extends StatelessWidget {
   }
 }
 
-// ─── Result Screen ───────────────────────────────────────────────────────────
+// ─── Result Screen ────────────────────────────────────────────────────────────
 
-/// Renders a captured image from either a data URL (gallery upload) or a blob URL (camera).
 Widget _buildImageFromDataUrl(String dataUrl) {
-  // Data URLs (from gallery): "data:image/jpeg;base64,..."
   if (dataUrl.startsWith('data:')) {
     final commaIndex = dataUrl.indexOf(',');
     if (commaIndex != -1) {
@@ -378,7 +354,6 @@ Widget _buildImageFromDataUrl(String dataUrl) {
       return Image.memory(bytes, width: 120, height: 120, fit: BoxFit.cover);
     }
   }
-  // Blob URLs or regular URLs (from camera capture preview)
   return Image.network(dataUrl, width: 120, height: 120, fit: BoxFit.cover);
 }
 
@@ -425,11 +400,9 @@ class _ResultView extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             if (capturedDataUrl != null) ...[
-                ClipOval(
-                  child: _buildImageFromDataUrl(capturedDataUrl!),
-                ),
-                const SizedBox(height: 24),
-              ],
+              ClipOval(child: _buildImageFromDataUrl(capturedDataUrl!)),
+              const SizedBox(height: 24),
+            ],
             Icon(cardIcon, color: cardColor, size: 64),
             const SizedBox(height: 16),
             Text(cardTitle,
@@ -449,10 +422,10 @@ class _ResultView extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                        _InfoRow(Icons.badge, 'Name', employee['name'] as String? ?? ''),
-                        if ((employee['department'] as String?)?.isNotEmpty == true)
-                          _InfoRow(Icons.apartment, 'Department',
-                              employee['department'] as String),
+                      _InfoRow(Icons.badge, 'Name', employee['name'] as String? ?? ''),
+                      if ((employee['department'] as String?)?.isNotEmpty == true)
+                        _InfoRow(Icons.apartment, 'Department',
+                            employee['department'] as String),
                     ],
                   ),
                 ),
