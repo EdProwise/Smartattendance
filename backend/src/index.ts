@@ -4,10 +4,15 @@ import { bodyLimit } from 'hono/body-limit';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { Jimp } from 'jimp';
 import { Employee } from './models/Employee.js';
 import { AttendanceRecord } from './models/AttendanceRecord.js';
 import { User } from './models/User.js';
+import {
+  extractDescriptor,
+  descriptorDistance,
+  DESCRIPTOR_THRESHOLD,
+  initFaceApi,
+} from './face-recognition.js';
 
 // ─── MongoDB Connection ───────────────────────────────────────────────────────
 
@@ -15,9 +20,35 @@ const MONGO_URI =
   process.env.MONGO_URI ||
   'mongodb://edprowise_db_user:PTx7QbEglhESE9Ie@ac-hrlyz9q-shard-00-00.wcjw48r.mongodb.net:27017,ac-hrlyz9q-shard-00-01.wcjw48r.mongodb.net:27017,ac-hrlyz9q-shard-00-02.wcjw48r.mongodb.net:27017/Smartattendance?ssl=true&replicaSet=atlas-zshpxx-shard-0&authSource=admin&retryWrites=true&w=majority';
 
+async function seedDefaultAdmin() {
+  try {
+    const existing = await User.findOne({ loginId: 'admin' });
+    if (!existing) {
+      const passwordHash = await bcrypt.hash('Admin@123', 12);
+      await User.create({
+        loginId: 'admin',
+        email: 'admin@edprowise.com',
+        passwordHash,
+        role: 'admin',
+      });
+      console.log('[Seed] Default admin created → loginId: admin  password: Admin@123');
+    } else if (existing.role !== 'admin') {
+      await User.findByIdAndUpdate(existing._id, { role: 'admin' });
+      console.log('[Seed] Existing "admin" user promoted to role: admin');
+    }
+  } catch (err) {
+    console.error('[Seed] Failed to seed admin:', err);
+  }
+}
+
 mongoose
   .connect(MONGO_URI)
-  .then(() => console.log('[MongoDB] Connected to Smartattendance'))
+  .then(async () => {
+    console.log('[MongoDB] Connected to Smartattendance');
+    await seedDefaultAdmin();
+    // Warm up face-recognition models in the background (don't block startup)
+    initFaceApi().catch((err) => console.error('[FaceAPI] Init error:', err));
+  })
   .catch((err) => console.error('[MongoDB] Connection error:', err));
 
 // ─── App ─────────────────────────────────────────────────────────────────────
@@ -47,7 +78,6 @@ app.get('/', (c) => c.json({ message: 'Smart Attendance System API', version: '1
 
 // ─── Employees ────────────────────────────────────────────────────────────────
 
-// Helper to serialize an employee doc
 function serializeEmployee(e: any, includePhoto = false) {
   return {
     id: e._id.toString(),
@@ -59,6 +89,8 @@ function serializeEmployee(e: any, includePhoto = false) {
     gender: e.gender ?? '',
     mobile: e.mobile ?? '',
     photoBase64: includePhoto ? (e.photoBase64 ?? null) : (e.photoBase64 ? '[photo stored]' : null),
+    // Employee is enrolled when they have a face descriptor (128-D vector)
+    isEnrolled: Array.isArray(e.faceDescriptor) && e.faceDescriptor.length === 128,
     createdAt: e.createdAt,
   };
 }
@@ -125,9 +157,7 @@ app.post('/employees/bulk', async (c) => {
       });
       results.push({ success: true, employeeId: String(row.employeeId) });
     } catch (err: any) {
-      const msg = err.code === 11000
-        ? 'Employee ID duplicate'
-        : 'Failed to save';
+      const msg = err.code === 11000 ? 'Employee ID duplicate' : 'Failed to save';
       results.push({ success: false, employeeId: String(row.employeeId), error: msg });
     }
   }
@@ -140,7 +170,7 @@ app.put('/employees/:id', async (c) => {
     employeeId?: string; name?: string; designation?: string; grade?: string;
     category?: string; gender?: string; mobile?: string;
   }>();
-  const emp = await Employee.findByIdAndUpdate(c.req.param('id'), body, { new: true }).lean();
+  const emp = await Employee.findByIdAndUpdate(c.req.param('id'), body, { returnDocument: 'after' }).lean();
   if (!emp) return c.json({ error: 'Employee not found' }, 404);
   return c.json(serializeEmployee(emp));
 });
@@ -151,152 +181,86 @@ app.delete('/employees/:id', async (c) => {
   return c.json({ success: true });
 });
 
+// ─── Face Enrollment ──────────────────────────────────────────────────────────
+
 app.post('/employees/:id/enroll', async (c) => {
   const body = await c.req.json<{ photoBase64: string }>();
   if (!body.photoBase64) return c.json({ error: 'photoBase64 is required' }, 400);
+
+  // Extract 128-D face descriptor using neural network
+  let descriptor: number[] | null;
+  try {
+    descriptor = await extractDescriptor(body.photoBase64);
+  } catch (err) {
+    console.error('[enroll] Face extraction error:', err);
+    return c.json({ error: 'Failed to process image. Please try again with a clearer photo.' }, 500);
+  }
+
+  if (!descriptor) {
+    return c.json({
+      error: 'No face detected in the photo. Please use a clear, well-lit photo where your face is visible.',
+    }, 422);
+  }
+
   const emp = await Employee.findByIdAndUpdate(
     c.req.param('id'),
-    { photoBase64: body.photoBase64 },
-    { new: true }
+    { photoBase64: body.photoBase64, faceDescriptor: descriptor },
+    { returnDocument: 'after' }
   );
   if (!emp) return c.json({ error: 'Employee not found' }, 404);
+
   return c.json({ success: true, message: 'Face enrolled successfully' });
 });
 
-// ─── Face Recognition / Attendance ───────────────────────────────────────────
-
-// Strip data URL prefix if present (e.g. "data:image/jpeg;base64,...")
-function stripDataUrlPrefix(base64: string): string {
-  const idx = base64.indexOf(',');
-  return idx !== -1 ? base64.substring(idx + 1) : base64;
-}
-
-// Decode base64 → Buffer → Jimp image resized to size×size greyscale pixels.
-async function imageToPixels(base64: string, size = 96): Promise<number[]> {
-  const clean = stripDataUrlPrefix(base64);
-  const buf = Buffer.from(clean, 'base64');
-
-  const img = await Jimp.fromBuffer(buf);
-  // Crop to centre square before resizing to reduce background influence
-  const { width, height } = img.bitmap;
-  const side = Math.min(width, height);
-  const x = Math.floor((width - side) / 2);
-  const y = Math.floor((height - side) / 2);
-  img.crop({ x, y, w: side, h: side });
-  img.resize({ w: size, h: size });
-  img.greyscale();
-
-  const pixels: number[] = [];
-  for (let i = 0; i < img.bitmap.data.length; i += 4) {
-    pixels.push(img.bitmap.data[i]);
-  }
-  return pixels;
-}
-
-// Histogram equalisation: stretch contrast so lighting differences don't dominate.
-function equalise(pixels: number[]): number[] {
-  const hist = new Array<number>(256).fill(0);
-  for (const p of pixels) hist[p]++;
-  const cdf = new Array<number>(256).fill(0);
-  cdf[0] = hist[0];
-  for (let i = 1; i < 256; i++) cdf[i] = cdf[i - 1] + hist[i];
-  const cdfMin = cdf.find((v) => v > 0) ?? 0;
-  const n = pixels.length;
-  return pixels.map((p) => Math.round(((cdf[p] - cdfMin) / (n - cdfMin)) * 255));
-}
-
-// Normalised Cross-Correlation: 1 = identical, -1 = inverse, 0 = unrelated.
-// We return similarity (higher = more similar).
-function ncc(a: number[], b: number[]): number {
-  const len = Math.min(a.length, b.length);
-  const meanA = a.slice(0, len).reduce((s, v) => s + v, 0) / len;
-  const meanB = b.slice(0, len).reduce((s, v) => s + v, 0) / len;
-  let num = 0, da = 0, db = 0;
-  for (let i = 0; i < len; i++) {
-    const va = a[i] - meanA;
-    const vb = b[i] - meanB;
-    num += va * vb;
-    da += va * va;
-    db += vb * vb;
-  }
-  if (da === 0 || db === 0) return 0;
-  return num / Math.sqrt(da * db);
-}
-
-// Structural Similarity (simplified, single-window global version).
-function ssim(a: number[], b: number[]): number {
-  const len = Math.min(a.length, b.length);
-  const C1 = (0.01 * 255) ** 2;
-  const C2 = (0.03 * 255) ** 2;
-  const muA = a.slice(0, len).reduce((s, v) => s + v, 0) / len;
-  const muB = b.slice(0, len).reduce((s, v) => s + v, 0) / len;
-  let sigA = 0, sigB = 0, sigAB = 0;
-  for (let i = 0; i < len; i++) {
-    sigA += (a[i] - muA) ** 2;
-    sigB += (b[i] - muB) ** 2;
-    sigAB += (a[i] - muA) * (b[i] - muB);
-  }
-  sigA = sigA / len;
-  sigB = sigB / len;
-  sigAB = sigAB / len;
-  return ((2 * muA * muB + C1) * (2 * sigAB + C2)) /
-         ((muA ** 2 + muB ** 2 + C1) * (sigA + sigB + C2));
-}
-
-// Combined similarity score (0–1, higher is more similar).
-function faceSimilarity(rawA: number[], rawB: number[]): number {
-  const a = equalise(rawA);
-  const b = equalise(rawB);
-  const nccScore = (ncc(a, b) + 1) / 2;   // map -1…1 → 0…1
-  const ssimScore = Math.max(0, ssim(a, b)); // already 0…1 approx
-  return (nccScore * 0.5 + ssimScore * 0.5);
-}
+// ─── Attendance Scan ──────────────────────────────────────────────────────────
 
 app.post('/attendance/scan', async (c) => {
   const body = await c.req.json<{ photoBase64: string }>();
   if (!body.photoBase64) return c.json({ error: 'photoBase64 is required' }, 400);
 
-  const enrolledEmployees = await Employee.find({ photoBase64: { $ne: null } }).lean();
+  // Only compare against employees who have a face descriptor (properly enrolled)
+  const enrolledEmployees = await Employee.find({
+    faceDescriptor: { $exists: true, $ne: null, $not: { $size: 0 } },
+  }).lean();
 
   if (enrolledEmployees.length === 0) {
     return c.json({
       matched: false,
-      message: 'No employees enrolled. Please enroll employees first.',
+      message: 'No employees enrolled. Please enroll employees with a face photo first.',
     });
   }
 
-  // --- Pixel-level face similarity matching ---
-  let incomingPixels: number[];
+  // Extract face descriptor from the scan photo
+  let scanDescriptor: number[] | null;
   try {
-    incomingPixels = await imageToPixels(body.photoBase64);
+    scanDescriptor = await extractDescriptor(body.photoBase64);
   } catch (err) {
-    console.error('[scan] Failed to decode incoming image:', err);
-    return c.json({ error: 'Could not decode incoming image. Please use a clear JPEG/PNG photo.' }, 400);
+    console.error('[scan] Descriptor extraction error:', err);
+    return c.json({ error: 'Failed to process scan image. Please try again.' }, 500);
   }
 
-  let bestMatch: (typeof enrolledEmployees)[0] | null = null;
-  let bestScore = -Infinity;
+  if (!scanDescriptor) {
+    return c.json({
+      matched: false,
+      message: 'No face detected in the scan. Please look directly at the camera and try again.',
+    });
+  }
 
-  // Similarity threshold: 0–1, higher means more similar.
-  // NCC+SSIM for same-person photos typically scores > 0.55; different people < 0.50.
-  const MATCH_THRESHOLD = 0.52;
+  // Find the closest match using Euclidean distance on 128-D descriptors
+  let bestMatch: (typeof enrolledEmployees)[0] | null = null;
+  let bestDistance = Infinity;
 
   for (const emp of enrolledEmployees) {
-    if (!emp.photoBase64) continue;
-    try {
-      const enrolledPixels = await imageToPixels(emp.photoBase64);
-      const score = faceSimilarity(incomingPixels, enrolledPixels);
-      console.log(`[scan] ${emp.name} similarity: ${score.toFixed(4)}`);
-      if (score > bestScore) {
-        bestScore = score;
-        if (score >= MATCH_THRESHOLD) bestMatch = emp;
-      }
-    } catch {
-      // skip employees whose stored photo can't be decoded
+    if (!Array.isArray(emp.faceDescriptor) || emp.faceDescriptor.length !== 128) continue;
+    const dist = descriptorDistance(scanDescriptor, emp.faceDescriptor);
+    console.log(`[scan] ${emp.name} → distance: ${dist.toFixed(4)}`);
+    if (dist < bestDistance) {
+      bestDistance = dist;
+      if (dist <= DESCRIPTOR_THRESHOLD) bestMatch = emp;
     }
   }
 
-  console.log(`[scan] Best score: ${bestScore.toFixed(4)}, matched: ${bestMatch?.name ?? 'none'}`);
+  console.log(`[scan] Best distance: ${bestDistance.toFixed(4)}, matched: ${bestMatch?.name ?? 'none'}`);
 
   const now = new Date();
 
@@ -316,10 +280,7 @@ app.post('/attendance/scan', async (c) => {
       return c.json({
         matched: true,
         alreadyMarked: true,
-        employee: {
-          id: bestMatch._id.toString(),
-          name: bestMatch.name,
-        },
+        employee: { id: bestMatch._id.toString(), name: bestMatch.name },
         message: `${bestMatch.name} already marked present today.`,
       });
     }
@@ -327,7 +288,7 @@ app.post('/attendance/scan', async (c) => {
     const record = await AttendanceRecord.create({
       employeeId: bestMatch._id.toString(),
       employeeName: bestMatch.name,
-      department: '',
+      department: bestMatch.designation ?? '',
       timestamp: now,
       status: 'present',
       photoBase64: body.photoBase64,
@@ -336,10 +297,7 @@ app.post('/attendance/scan', async (c) => {
     return c.json({
       matched: true,
       alreadyMarked: false,
-      employee: {
-        id: bestMatch._id.toString(),
-        name: bestMatch.name,
-      },
+      employee: { id: bestMatch._id.toString(), name: bestMatch.name },
       message: `Welcome, ${bestMatch.name}! Attendance marked.`,
       record: { id: record._id.toString(), ...record.toObject() },
     });
@@ -397,7 +355,7 @@ app.get('/attendance/stats', async (c) => {
   const [totalEmployees, enrolledEmployees, presentToday, unrecognizedToday, totalRecords] =
     await Promise.all([
       Employee.countDocuments(),
-      Employee.countDocuments({ photoBase64: { $ne: null } }),
+      Employee.countDocuments({ faceDescriptor: { $exists: true, $ne: null, $not: { $size: 0 } } }),
       AttendanceRecord.countDocuments({
         status: 'present',
         timestamp: { $gte: startOfDay, $lte: endOfDay },
@@ -437,7 +395,7 @@ app.post('/auth/register', async (c) => {
   try {
     const passwordHash = await bcrypt.hash(body.password, 12);
     const user = await User.create({ loginId: body.loginId, email: body.email, passwordHash });
-    return c.json({ id: user._id.toString(), loginId: user.loginId, email: user.email }, 201);
+    return c.json({ id: user._id.toString(), loginId: user.loginId, email: user.email, role: user.role ?? 'user' }, 201);
   } catch (err: any) {
     if (err.code === 11000) {
       const field = err.keyPattern?.loginId ? 'Login ID' : 'Email';
@@ -456,7 +414,7 @@ app.post('/auth/login', async (c) => {
   if (!user) return c.json({ error: 'Invalid login ID or password' }, 401);
   const valid = await bcrypt.compare(body.password, user.passwordHash);
   if (!valid) return c.json({ error: 'Invalid login ID or password' }, 401);
-  return c.json({ id: user._id.toString(), loginId: user.loginId, email: user.email });
+  return c.json({ id: user._id.toString(), loginId: user.loginId, email: user.email, role: user.role ?? 'user' });
 });
 
 app.post('/auth/forgot-password', async (c) => {
@@ -464,13 +422,11 @@ app.post('/auth/forgot-password', async (c) => {
   if (!body.email) return c.json({ error: 'email is required' }, 400);
   const user = await User.findOne({ email: body.email.toLowerCase() });
   if (!user) {
-    // Don't reveal if email exists
     return c.json({ message: 'If that email is registered, a reset code has been sent.' });
   }
-  const token = crypto.randomBytes(4).toString('hex').toUpperCase(); // 8-char code
-  const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+  const token = crypto.randomBytes(4).toString('hex').toUpperCase();
+  const expiry = new Date(Date.now() + 15 * 60 * 1000);
   await User.findByIdAndUpdate(user._id, { resetToken: token, resetTokenExpiry: expiry });
-  // In production send via email — here we return it directly for dev/demo
   return c.json({ message: 'Reset code generated', resetCode: token });
 });
 
