@@ -1,0 +1,9 @@
+{
+  "name": "smart-attendance",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "backend": "cd backend && bun run dev",
+    "backend:tunnel": "cd backend && bun run dev:tunnel"
+  }
+}
