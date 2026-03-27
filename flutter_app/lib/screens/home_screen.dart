@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -101,11 +102,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return 'Good Evening,';
   }
 
+  Future<void> _storeAttendanceHistory(String type, DateTime time) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('attendance_history') ?? '[]';
+    final history = List<Map<String, dynamic>>.from(
+      (jsonDecode(raw) as List).map((e) => Map<String, dynamic>.from(e as Map)),
+    );
+    history.insert(0, {'type': type, 'timestamp': time.toIso8601String()});
+    if (history.length > 50) history.removeRange(50, history.length);
+    await prefs.setString('attendance_history', jsonEncode(history));
+  }
+
   Future<void> _handleCheckIn() async {
     final prefs = await SharedPreferences.getInstance();
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final now = DateTime.now();
     await prefs.setString('checkin_$today', now.toIso8601String());
+    await _storeAttendanceHistory('checkin', now);
     if (mounted) setState(() => _checkinTime = now);
     context.push('/scan', extra: {'type': 'checkin', 'schoolId': _user?.schoolId}).then((_) {
       _loadLocalState();
@@ -118,6 +131,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final now = DateTime.now();
     await prefs.setString('checkout_$today', now.toIso8601String());
+    await _storeAttendanceHistory('checkout', now);
     if (mounted) setState(() => _checkoutTime = now);
     context.push('/scan', extra: {'type': 'checkout', 'schoolId': _user?.schoolId}).then((_) {
       _loadLocalState();
@@ -139,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
     if (confirm == true && mounted) {
       await AuthService.logout();
-      if (mounted) context.go('/');
+      if (mounted) setState(() => _user = null);
     }
   }
 
@@ -281,17 +295,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 tooltip: 'Notifications',
               ),
               if (_user != null)
-                CircleAvatar(
-                  radius: 19,
-                  backgroundColor: Colors.white.withValues(alpha: 0.22),
-                  child: Text(
-                    _user!.loginId.isNotEmpty
-                        ? _user!.loginId[0].toUpperCase()
-                        : 'U',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 17,
+                GestureDetector(
+                  onTap: () => context.push('/profile'),
+                  child: CircleAvatar(
+                    radius: 19,
+                    backgroundColor: Colors.white.withValues(alpha: 0.22),
+                    child: Text(
+                      _user!.loginId.isNotEmpty
+                          ? _user!.loginId[0].toUpperCase()
+                          : 'U',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 17,
+                      ),
                     ),
                   ),
                 ),

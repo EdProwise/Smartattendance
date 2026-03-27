@@ -149,6 +149,23 @@ class AuthService {
     _check(res);
   }
 
+  static Future<void> changePassword({
+    required String loginId,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final res = await _client.post(
+      Uri.parse('$_baseUrl/auth/change-password'),
+      headers: _headers,
+      body: jsonEncode({
+        'loginId': loginId,
+        'currentPassword': currentPassword,
+        'newPassword': newPassword,
+      }),
+    );
+    _check(res);
+  }
+
   // ─── Helper ───────────────────────────────────────────────────────────────
 
   static void _check(http.Response res) {

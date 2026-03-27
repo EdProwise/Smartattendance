@@ -500,4 +500,19 @@ app.post('/auth/reset-password', async (c) => {
   return c.json({ message: 'Password reset successfully' });
 });
 
+app.post('/auth/change-password', async (c) => {
+  const body = await c.req.json<{ loginId: string; currentPassword: string; newPassword: string }>();
+  if (!body.loginId || !body.currentPassword || !body.newPassword)
+    return c.json({ error: 'loginId, currentPassword and newPassword are required' }, 400);
+  if (!PASSWORD_REGEX.test(body.newPassword))
+    return c.json({ error: 'New password must be at least 8 characters with 1 uppercase, 1 number and 1 symbol' }, 400);
+  const user = await User.findOne({ loginId: body.loginId });
+  if (!user) return c.json({ error: 'User not found' }, 404);
+  const valid = await bcrypt.compare(body.currentPassword, user.passwordHash);
+  if (!valid) return c.json({ error: 'Current password is incorrect' }, 400);
+  const passwordHash = await bcrypt.hash(body.newPassword, 12);
+  await User.findByIdAndUpdate(user._id, { passwordHash });
+  return c.json({ message: 'Password changed successfully' });
+});
+
 export default { fetch: app.fetch, port: 8080 };

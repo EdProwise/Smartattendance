@@ -15,6 +15,12 @@ class ApiService {
 
   // ─── Schools ──────────────────────────────────────────────────────────────
 
+  static Future<School> getSchool(String id) async {
+    final res = await _client.get(Uri.parse('$baseUrl/schools/$id'));
+    _check(res);
+    return School.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
   static Future<List<School>> getSchools() async {
     final res = await _client.get(Uri.parse('$baseUrl/schools'));
     _check(res);
