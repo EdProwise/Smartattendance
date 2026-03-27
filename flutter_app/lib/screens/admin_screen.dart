@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../services/camera_service.dart';
 import '../services/excel_helper.dart';
 import '../services/file_io_service.dart';
@@ -22,17 +24,41 @@ class _AdminScreenState extends State<AdminScreen> {
   String? _error;
   String _search = '';
 
+  String? _schoolId;
+  String? _schoolName;
+  AuthUser? _currentUser;
+
   @override
   void initState() {
     super.initState();
     CameraService.enroll.init();
+    _initUser();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final extra = GoRouterState.of(context).extra as Map<String, dynamic>?;
+    final incoming = extra?['schoolId'] as String?;
+    if (incoming != null && incoming != _schoolId) {
+      _schoolId = incoming;
+      _schoolName = extra?['schoolName'] as String?;
+      _fetchEmployees();
+    }
+  }
+
+  Future<void> _initUser() async {
+    _currentUser = await AuthService.getSession();
+    if (_currentUser?.isSchoolAdmin == true && _schoolId == null) {
+      _schoolId = _currentUser!.schoolId;
+    }
     _fetchEmployees();
   }
 
   Future<void> _fetchEmployees() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final list = await ApiService.getEmployees();
+      final list = await ApiService.getEmployees(schoolId: _schoolId);
       if (mounted) setState(() { _employees = list; _loading = false; });
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _loading = false; });
@@ -96,6 +122,7 @@ class _AdminScreenState extends State<AdminScreen> {
       builder: (_) => _AddEmployeeDialog(
         onAdd: (data) async {
           await ApiService.createEmployee(
+            schoolId: _schoolId,
             employeeId: data['employeeId']!,
             name: data['name']!,
             designation: data['designation']!,
@@ -142,7 +169,7 @@ class _AdminScreenState extends State<AdminScreen> {
     if (employees.isEmpty) { _showError('No valid rows found in Excel'); return; }
 
     try {
-      final result = await ApiService.bulkImportEmployees(employees);
+      final result = await ApiService.bulkImportEmployees(employees, schoolId: _schoolId);
       final imported = result['imported'] as int;
       final total    = result['total']    as int;
       if (mounted) {
@@ -174,8 +201,14 @@ class _AdminScreenState extends State<AdminScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F0FF),
       appBar: AppBar(
-        title: const Text('Employee Management'),
+        title: Text(_schoolName != null ? _schoolName! : 'Employee Management'),
         actions: [
+          if (_currentUser?.isSuperAdmin == true && _schoolId == null)
+            IconButton(
+              icon: const Icon(Icons.school_rounded),
+              tooltip: 'Manage Schools',
+              onPressed: () => context.push('/schools'),
+            ),
           IconButton(
             icon: const Icon(Icons.upload_file),
             tooltip: 'Import from Excel',

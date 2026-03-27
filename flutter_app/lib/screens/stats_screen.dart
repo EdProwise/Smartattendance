@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -15,10 +16,17 @@ class _StatsScreenState extends State<StatsScreen> {
   List<AttendanceRecord> _recentRecords = [];
   bool _loading = true;
   String? _error;
+  String? _schoolId;
 
   @override
   void initState() {
     super.initState();
+    _initAndLoad();
+  }
+
+  Future<void> _initAndLoad() async {
+    final user = await AuthService.getSession();
+    _schoolId = user?.schoolId;
     _load();
   }
 
@@ -26,8 +34,8 @@ class _StatsScreenState extends State<StatsScreen> {
     setState(() { _loading = true; _error = null; });
     try {
       final results = await Future.wait([
-        ApiService.getStats(),
-        ApiService.getAttendance(),
+        ApiService.getStats(schoolId: _schoolId),
+        ApiService.getAttendance(schoolId: _schoolId),
       ]);
       if (mounted) {
         setState(() {

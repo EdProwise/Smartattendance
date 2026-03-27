@@ -9,6 +9,7 @@ import 'screens/register_screen.dart';
 import 'screens/forgot_password_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/stats_screen.dart';
+import 'screens/schools_screen.dart';
 import 'services/auth_service.dart';
 
 void main() {
@@ -45,6 +46,7 @@ final _router = GoRouter(
     GoRoute(path: '/admin', builder: (_, __) => const AdminScreen()),
     GoRoute(path: '/attendance', builder: (_, __) => const AttendanceScreen()),
     GoRoute(path: '/stats', builder: (_, __) => const StatsScreen()),
+    GoRoute(path: '/schools', builder: (_, __) => const SchoolsScreen()),
   ],
 );
 

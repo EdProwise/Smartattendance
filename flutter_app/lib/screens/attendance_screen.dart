@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
 
 class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({super.key});
@@ -15,10 +16,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   bool _loading = true;
   String? _error;
   DateTime _selectedDate = DateTime.now();
+  String? _schoolId;
 
   @override
   void initState() {
     super.initState();
+    _initAndFetch();
+  }
+
+  Future<void> _initAndFetch() async {
+    final user = await AuthService.getSession();
+    _schoolId = user?.schoolId;
     _fetchRecords();
   }
 
@@ -26,7 +34,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     setState(() { _loading = true; _error = null; });
     try {
       final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
-      final list = await ApiService.getAttendance(date: dateStr);
+      final list = await ApiService.getAttendance(date: dateStr, schoolId: _schoolId);
       if (mounted) setState(() { _records = list; _loading = false; });
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _loading = false; });

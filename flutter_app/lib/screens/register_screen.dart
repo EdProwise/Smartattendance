@@ -12,10 +12,16 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
+
+  // Account fields
   final _loginIdCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
+
+  // School fields
+  final _schoolNameCtrl = TextEditingController();
+
   bool _obscurePass = true;
   bool _obscureConfirm = true;
   bool _loading = false;
@@ -27,6 +33,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
+    _schoolNameCtrl.dispose();
     super.dispose();
   }
 
@@ -38,6 +45,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         loginId: _loginIdCtrl.text.trim(),
         email: _emailCtrl.text.trim(),
         password: _passwordCtrl.text,
+        schoolName: _schoolNameCtrl.text.trim(),
+        schoolEmail: _emailCtrl.text.trim(),
       );
       if (mounted) context.go('/');
     } on ApiException catch (e) {
@@ -52,14 +61,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F0FF),
       appBar: AppBar(
-        title: const Text('Create Account'),
+        title: const Text('Register School & Admin'),
         leading: BackButton(onPressed: () => context.pop()),
       ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
+            constraints: const BoxConstraints(maxWidth: 480),
             child: Card(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -70,12 +79,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     children: [
                       const Text(
                         'Register',
-                          style: TextStyle(
-                              fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF854CF4)),
+                        style: TextStyle(
+                            fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF854CF4)),
                       ),
                       const SizedBox(height: 4),
-                      const Text('Fill in details to create your account',
-                          style: TextStyle(color: Colors.black54, fontSize: 13)),
+                      const Text(
+                        'Create a new school and its admin account',
+                        style: TextStyle(color: Colors.black54, fontSize: 13),
+                      ),
                       const SizedBox(height: 20),
 
                       if (_error != null) ...[
@@ -83,11 +94,46 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         const SizedBox(height: 16),
                       ],
 
-                      // Login ID
+                      // ── School Details ──────────────────────────────────
+                      _sectionLabel(Icons.school_outlined, 'School Details'),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF854CF4).withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF854CF4).withValues(alpha: 0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.auto_awesome_rounded, size: 14, color: Color(0xFF854CF4)),
+                            const SizedBox(width: 6),
+                            const Text(
+                              'School code will be auto-generated',
+                              style: TextStyle(fontSize: 12, color: Color(0xFF854CF4)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      TextFormField(
+                        controller: _schoolNameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'School Name *',
+                          prefixIcon: Icon(Icons.school_rounded),
+                          border: OutlineInputBorder(),
+                        ),
+                        textInputAction: TextInputAction.next,
+                        validator: (v) =>
+                            (v == null || v.trim().isEmpty) ? 'School name is required' : null,
+                      ),
+                      const SizedBox(height: 24),
+
                       TextFormField(
                         controller: _loginIdCtrl,
                         decoration: const InputDecoration(
-                          labelText: 'Login ID',
+                          labelText: 'Login ID *',
                           hintText: 'e.g. john_doe',
                           prefixIcon: Icon(Icons.badge_outlined),
                           border: OutlineInputBorder(),
@@ -95,21 +141,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         textInputAction: TextInputAction.next,
                         validator: (v) {
                           if (v == null || v.trim().isEmpty) return 'Login ID is required';
-                          if (v.trim().length < 3) return 'Login ID must be at least 3 characters';
+                          if (v.trim().length < 3) return 'At least 3 characters';
                           if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(v.trim())) {
-                            return 'Only letters, numbers and underscore allowed';
+                            return 'Letters, numbers and underscore only';
                           }
                           return null;
                         },
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
 
-                      // Email
                       TextFormField(
                         controller: _emailCtrl,
                         keyboardType: TextInputType.emailAddress,
                         decoration: const InputDecoration(
-                          labelText: 'Email',
+                          labelText: 'Email *',
                           prefixIcon: Icon(Icons.email_outlined),
                           border: OutlineInputBorder(),
                         ),
@@ -122,14 +167,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           return null;
                         },
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
 
-                      // Password
                       TextFormField(
                         controller: _passwordCtrl,
                         obscureText: _obscurePass,
                         decoration: InputDecoration(
-                          labelText: 'Password',
+                          labelText: 'Password *',
                           prefixIcon: const Icon(Icons.lock_outline),
                           border: const OutlineInputBorder(),
                           suffixIcon: IconButton(
@@ -143,14 +187,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       const SizedBox(height: 8),
                       _PasswordPolicyIndicator(password: _passwordCtrl.text),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
 
-                      // Confirm password
                       TextFormField(
                         controller: _confirmCtrl,
                         obscureText: _obscureConfirm,
                         decoration: InputDecoration(
-                          labelText: 'Confirm Password',
+                          labelText: 'Confirm Password *',
                           prefixIcon: const Icon(Icons.lock_outline),
                           border: const OutlineInputBorder(),
                           suffixIcon: IconButton(
@@ -179,7 +222,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   child: CircularProgressIndicator(
                                       strokeWidth: 2.5, color: Colors.white),
                                 )
-                              : const Text('Create Account'),
+                              : const Text('Register School & Create Admin'),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -193,8 +236,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             onTap: () => context.pop(),
                             child: const Text(
                               'Sign In',
-                    style: TextStyle(
-                                    color: Color(0xFF854CF4), fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                  color: Color(0xFF854CF4), fontWeight: FontWeight.bold),
                             ),
                           ),
                         ],
@@ -207,6 +250,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _sectionLabel(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: const Color(0xFF854CF4)),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF854CF4),
+            letterSpacing: 0.4,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -222,7 +283,7 @@ class _PasswordPolicyIndicator extends StatelessWidget {
       _PolicyRule('1 uppercase letter (A-Z)', password.contains(RegExp(r'[A-Z]'))),
       _PolicyRule('1 number (0-9)', password.contains(RegExp(r'\d'))),
       _PolicyRule('1 symbol (!@#...)',
-            password.contains(RegExp(r'[!@#$%^&*()\-_=+\[\]{};:,./<>?\\|]'))),
+          password.contains(RegExp(r'[!@#$%^&*()\-_=+\[\]{};:,./<>?\\|]'))),
     ];
 
     return Column(

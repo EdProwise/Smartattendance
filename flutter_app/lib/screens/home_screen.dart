@@ -74,7 +74,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     setState(() => _loadingRecords = true);
     try {
       final dateStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      final records = await ApiService.getAttendance(date: dateStr);
+      final records = await ApiService.getAttendance(date: dateStr, schoolId: _user?.schoolId);
       if (mounted) setState(() { _todayRecords = records; _loadingRecords = false; });
     } catch (_) {
       if (mounted) setState(() => _loadingRecords = false);
@@ -102,26 +102,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _handleCheckIn() async {
-    if (_user == null) { context.go('/login'); return; }
     final prefs = await SharedPreferences.getInstance();
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final now = DateTime.now();
     await prefs.setString('checkin_$today', now.toIso8601String());
     if (mounted) setState(() => _checkinTime = now);
-    context.push('/scan').then((_) {
+    context.push('/scan', extra: {'type': 'checkin', 'schoolId': _user?.schoolId}).then((_) {
       _loadLocalState();
       _fetchTodayRecords();
     });
   }
 
   Future<void> _handleCheckOut() async {
-    if (_user == null) { context.go('/login'); return; }
     final prefs = await SharedPreferences.getInstance();
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final now = DateTime.now();
     await prefs.setString('checkout_$today', now.toIso8601String());
     if (mounted) setState(() => _checkoutTime = now);
-    context.push('/scan').then((_) {
+    context.push('/scan', extra: {'type': 'checkout', 'schoolId': _user?.schoolId}).then((_) {
       _loadLocalState();
       _fetchTodayRecords();
     });
@@ -177,8 +175,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     _buildStatusCard(isCheckedIn, isCheckedOut, isNotMarked),
                     const SizedBox(height: 28),
 
-                    // ── Primary Action Button ────────────────────────────
-                    Center(child: _buildActionButton(isCheckedIn, isCheckedOut, isNotMarked)),
+                    // ── Primary Action Buttons ───────────────────────────
+                    _buildActionButtons(isCheckedIn, isCheckedOut),
                     const SizedBox(height: 16),
 
                     // ── Login / Logout Button ────────────────────────────
@@ -491,98 +489,82 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ─── Primary Action Button ───────────────────────────────────────────────────
+  // ─── Primary Action Buttons ──────────────────────────────────────────────────
 
-  Widget _buildActionButton(bool isCheckedIn, bool isCheckedOut, bool isNotMarked) {
-    if (isCheckedOut) {
-      return Column(
-        children: [
-          Container(
-            width: 158,
-            height: 158,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFFE8F5E9),
-              border: Border.all(
-                color: const Color(0xFF4CAF50).withValues(alpha: 0.35),
-                width: 2.5,
-              ),
-            ),
-            child: const Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.check_circle_rounded, color: Color(0xFF4CAF50), size: 52),
-                SizedBox(height: 6),
-                Text(
-                  'Done!',
-                  style: TextStyle(
-                    color: Color(0xFF4CAF50),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Attendance Marked for Today',
-            style: TextStyle(color: Colors.black54, fontSize: 13),
-          ),
-        ],
-      );
-    }
+  Widget _buildActionButtons(bool isCheckedIn, bool isCheckedOut) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildCircleButton(
+          label: 'Check In',
+          icon: Icons.login_rounded,
+          colorLight: const Color(0xFF43A047),
+          colorDark: const Color(0xFF1B5E20),
+          done: isCheckedIn || isCheckedOut,
+          onTap: _handleCheckIn,
+        ),
+        const SizedBox(width: 28),
+        _buildCircleButton(
+          label: 'Check Out',
+          icon: Icons.logout_rounded,
+          colorLight: const Color(0xFFEF5350),
+          colorDark: const Color(0xFFB71C1C),
+          done: isCheckedOut,
+          onTap: _handleCheckOut,
+        ),
+      ],
+    );
+  }
 
-    final isCheckIn = isNotMarked;
-    final Color btnColorDark = isCheckIn ? const Color(0xFF1B5E20) : const Color(0xFFB71C1C);
-    final Color btnColorLight = isCheckIn ? const Color(0xFF43A047) : const Color(0xFFEF5350);
-    final String btnLabel = isCheckIn ? 'Check In' : 'Check Out';
-    final IconData btnIcon = isCheckIn ? Icons.login_rounded : Icons.logout_rounded;
-    final bool disabled = _user == null;
-    final VoidCallback? onTap =
-        disabled ? null : (isCheckIn ? _handleCheckIn : _handleCheckOut);
-
+  Widget _buildCircleButton({
+    required String label,
+    required IconData icon,
+    required Color colorLight,
+    required Color colorDark,
+    required bool done,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Column(
         children: [
           ScaleTransition(
-            scale: disabled ? AlwaysStoppedAnimation(1.0) : _pulseAnim,
+            scale: done ? AlwaysStoppedAnimation(1.0) : _pulseAnim,
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // Glow ring
                 Container(
-                  width: 186,
-                  height: 186,
+                  width: 148,
+                  height: 148,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: (disabled ? Colors.grey : btnColorLight)
+                    color: (done ? const Color(0xFF4CAF50) : colorLight)
                         .withValues(alpha: 0.12),
                   ),
                 ),
-                // Main circular button
                 Container(
-                  width: 152,
-                  height: 152,
+                  width: 118,
+                  height: 118,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: disabled
+                    gradient: done
                         ? const LinearGradient(
-                            colors: [Color(0xFFBDBDBD), Color(0xFF9E9E9E)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFF66BB6A), Color(0xFF2E7D32)],
                           )
                         : LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
-                            colors: [btnColorLight, btnColorDark],
+                            colors: [colorLight, colorDark],
                           ),
                     boxShadow: [
                       BoxShadow(
-                        color: (disabled ? Colors.grey : btnColorDark)
-                            .withValues(alpha: 0.45),
-                        blurRadius: 28,
-                        spreadRadius: 2,
-                        offset: const Offset(0, 10),
+                        color: (done ? const Color(0xFF2E7D32) : colorDark)
+                            .withValues(alpha: 0.4),
+                        blurRadius: 20,
+                        spreadRadius: 1,
+                        offset: const Offset(0, 8),
                       ),
                     ],
                   ),
@@ -590,18 +572,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
-                        disabled ? Icons.lock_rounded : btnIcon,
+                        done ? Icons.check_circle_rounded : icon,
                         color: Colors.white,
-                        size: 42,
+                        size: 34,
                       ),
-                      const SizedBox(height: 7),
+                      const SizedBox(height: 5),
                       Text(
-                        disabled ? 'Login First' : btnLabel,
+                        done ? 'Done' : label,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 15,
+                          fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          letterSpacing: 0.3,
+                          letterSpacing: 0.2,
                         ),
                       ),
                     ],
@@ -610,14 +592,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Text(
-            disabled
-                ? 'Please login to mark attendance'
-                : isCheckIn
-                    ? 'Tap to start your work day'
-                    : 'Tap to end your work day',
-            style: const TextStyle(color: Colors.black45, fontSize: 12),
+            label,
+            style: TextStyle(
+              color: done ? const Color(0xFF2E7D32) : Colors.black45,
+              fontSize: 11,
+              fontWeight: done ? FontWeight.w600 : FontWeight.normal,
+            ),
           ),
         ],
       ),
@@ -721,7 +703,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 icon: Icons.people_rounded,
                 label: 'Manage',
                 color: const Color(0xFF854CF4),
-                onTap: () => context.push('/admin'),
+                onTap: () {
+                  if (_user?.isSuperAdmin == true) {
+                    context.push('/schools');
+                  } else {
+                    context.push('/admin');
+                  }
+                },
               ),
             ),
             const SizedBox(width: 10),

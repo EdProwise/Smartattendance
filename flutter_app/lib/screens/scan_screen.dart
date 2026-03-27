@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
 import '../services/camera_service.dart';
 import '../services/file_io_service.dart';
@@ -19,10 +20,21 @@ class _ScanScreenState extends State<ScanScreen> {
   Map<String, dynamic>? _result;
   String? _capturedDataUrl;
 
+  String _scanType = 'checkin';  // 'checkin' | 'checkout'
+  String? _schoolId;
+
   @override
   void initState() {
     super.initState();
     CameraService.scan.init();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final extra = GoRouterState.of(context).extra as Map<String, dynamic>?;
+    _scanType = extra?['type'] as String? ?? 'checkin';
+    _schoolId = extra?['schoolId'] as String?;
   }
 
   @override
@@ -86,7 +98,7 @@ class _ScanScreenState extends State<ScanScreen> {
   Future<void> _processScan(String base64Image) async {
     setState(() { _scanning = true; _result = null; });
     try {
-      final result = await ApiService.scanFace(base64Image);
+      final result = await ApiService.scanFace(base64Image, type: _scanType, schoolId: _schoolId);
       if (mounted) setState(() { _result = result; _scanning = false; });
     } catch (e) {
       if (mounted) {
@@ -116,7 +128,7 @@ class _ScanScreenState extends State<ScanScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F0FF),
       appBar: AppBar(
-        title: const Text('Mark Attendance'),
+        title: Text(_scanType == 'checkout' ? 'Check Out' : 'Check In'),
         actions: [
           if (_cameraActive)
             IconButton(
