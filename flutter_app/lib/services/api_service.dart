@@ -3,8 +3,8 @@ import 'package:http/http.dart' as http;
 import '../models/models.dart';
 
 class ApiService {
-  // static const String baseUrl = 'https://smart-attendance-backend-production-0948.up.railway.app';
-  static const String baseUrl = 'http://localhost:8080';
+  static const String baseUrl = 'https://smart-attendance-backend-production-0948.up.railway.app';
+  // static const String baseUrl = 'http://localhost:8080';
 
   static final _client = http.Client();
 

@@ -84,6 +84,39 @@ class AuthService {
     await prefs.remove(_userKey);
   }
 
+  // ─── Profile PIN (stored hashed in DB) ───────────────────────────────────
+
+  static Future<void> savePin(String loginId, String pin) async {
+    final res = await _client.post(
+      Uri.parse('$_baseUrl/auth/set-pin'),
+      headers: _headers,
+      body: jsonEncode({'loginId': loginId, 'pin': pin}),
+    );
+    _check(res);
+  }
+
+  static Future<bool> verifyPin(String loginId, String pin) async {
+    final res = await _client.post(
+      Uri.parse('$_baseUrl/auth/verify-pin'),
+      headers: _headers,
+      body: jsonEncode({'loginId': loginId, 'pin': pin}),
+    );
+    if (res.statusCode == 400) return false;
+    _check(res);
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return data['valid'] as bool? ?? false;
+  }
+
+  static Future<bool> hasPin(String loginId) async {
+    final res = await _client.get(
+      Uri.parse('$_baseUrl/auth/has-pin/$loginId'),
+      headers: _headers,
+    );
+    if (res.statusCode != 200) return false;
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return data['hasPin'] as bool? ?? false;
+  }
+
   // ─── API calls ────────────────────────────────────────────────────────────
 
   static Future<AuthUser> login({

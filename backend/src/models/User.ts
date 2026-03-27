@@ -9,6 +9,7 @@ export interface IUser extends Document {
   createdAt: Date;
   resetToken?: string;
   resetTokenExpiry?: Date;
+  profilePinHash?: string;
 }
 
 const UserSchema = new Schema<IUser>(
@@ -20,6 +21,7 @@ const UserSchema = new Schema<IUser>(
     schoolId: { type: String, default: null },
     resetToken: { type: String },
     resetTokenExpiry: { type: Date },
+    profilePinHash: { type: String, default: null },
   },
   { timestamps: true }
 );

@@ -537,4 +537,34 @@ app.post('/auth/change-password', async (c) => {
   return c.json({ message: 'Password changed successfully' });
 });
 
+// ─── Profile PIN endpoints ────────────────────────────────────────────────────
+
+app.get('/auth/has-pin/:loginId', async (c) => {
+  const { loginId } = c.req.param();
+  const user = await User.findOne({ loginId });
+  if (!user) return c.json({ error: 'User not found' }, 404);
+  return c.json({ hasPin: !!user.profilePinHash });
+});
+
+app.post('/auth/set-pin', async (c) => {
+  const body = await c.req.json<{ loginId: string; pin: string }>();
+  if (!body.loginId || !body.pin) return c.json({ error: 'loginId and pin are required' }, 400);
+  if (!/^\d{6}$/.test(body.pin)) return c.json({ error: 'PIN must be exactly 6 digits' }, 400);
+  const user = await User.findOne({ loginId: body.loginId });
+  if (!user) return c.json({ error: 'User not found' }, 404);
+  const profilePinHash = await bcrypt.hash(body.pin, 12);
+  await User.findByIdAndUpdate(user._id, { profilePinHash });
+  return c.json({ message: 'PIN saved successfully' });
+});
+
+app.post('/auth/verify-pin', async (c) => {
+  const body = await c.req.json<{ loginId: string; pin: string }>();
+  if (!body.loginId || !body.pin) return c.json({ error: 'loginId and pin are required' }, 400);
+  const user = await User.findOne({ loginId: body.loginId });
+  if (!user) return c.json({ error: 'User not found' }, 404);
+  if (!user.profilePinHash) return c.json({ valid: false, error: 'No PIN set' }, 400);
+  const valid = await bcrypt.compare(body.pin, user.profilePinHash);
+  return c.json({ valid });
+});
+
 export default { fetch: app.fetch, port: 8080 };

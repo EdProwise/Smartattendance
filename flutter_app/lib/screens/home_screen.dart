@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -211,9 +212,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     _buildInfoRow(),
                     const SizedBox(height: 28),
 
-                    // ── Quick Actions ────────────────────────────────────
-                    _buildQuickActions(),
-                    const SizedBox(height: 16),
                   ],
                 ),
               ),
@@ -285,7 +283,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               const Spacer(),
               if (_user != null)
                 GestureDetector(
-                  onTap: () => context.push('/profile').then((_) => _loadUser()),
+                  onTap: () async {
+                    final loginId = _user!.loginId;
+                    final hasPinSet = await AuthService.hasPin(loginId);
+                    if (!mounted) return;
+                    if (!hasPinSet) {
+                      final set = await showDialog<bool>(
+                        context: context,
+                        barrierDismissible: true,
+                        builder: (_) => _SetPinDialog(loginId: loginId),
+                      );
+                      if (set == true && mounted) {
+                        context.push('/profile').then((_) => _loadUser());
+                      }
+                    } else {
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        barrierDismissible: true,
+                        builder: (_) => _PinEntryDialog(loginId: loginId),
+                      );
+                      if (ok == true && mounted) {
+                        context.push('/profile').then((_) => _loadUser());
+                      }
+                    }
+                  },
                   child: CircleAvatar(
                     radius: 19,
                     backgroundColor: Colors.white.withValues(alpha: 0.22),
@@ -678,60 +699,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ─── Quick Actions ───────────────────────────────────────────────────────────
-
-  Widget _buildQuickActions() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Quick Actions',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.black87,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _QuickActionTile(
-                icon: Icons.people_rounded,
-                label: 'Manage',
-                color: const Color(0xFF854CF4),
-                onTap: () {
-                  if (_user?.isSuperAdmin == true) {
-                    context.push('/schools');
-                  } else {
-                    context.push('/admin');
-                  }
-                },
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _QuickActionTile(
-                icon: Icons.list_alt_rounded,
-                label: 'Logs',
-                color: const Color(0xFF6C3FC7),
-                onTap: () => context.push('/attendance'),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _QuickActionTile(
-                icon: Icons.bar_chart_rounded,
-                label: 'Stats',
-                color: const Color(0xFF04D3D3),
-                onTap: () => context.push('/stats'),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
 }
 
 // ─── Reusable Widgets ─────────────────────────────────────────────────────────
@@ -828,47 +795,403 @@ class _InfoCard extends StatelessWidget {
   }
 }
 
-class _QuickActionTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
+// ─── Set PIN Dialog (first-time setup) ───────────────────────────────────────
 
-  const _QuickActionTile({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
+class _SetPinDialog extends StatefulWidget {
+  final String loginId;
+  const _SetPinDialog({required this.loginId});
+
+  @override
+  State<_SetPinDialog> createState() => _SetPinDialogState();
+}
+
+class _SetPinDialogState extends State<_SetPinDialog> {
+  String _pin = '';
+  String _confirmPin = '';
+  bool _confirming = false;
+  String? _error;
+
+  void _addDigit(String digit) {
+    if (_confirming) {
+      if (_confirmPin.length >= 6) return;
+      setState(() {
+        _confirmPin += digit;
+        _error = null;
+      });
+      if (_confirmPin.length == 6) _checkConfirm();
+    } else {
+      if (_pin.length >= 6) return;
+      setState(() {
+        _pin += digit;
+        _error = null;
+      });
+      if (_pin.length == 6) setState(() => _confirming = true);
+    }
+  }
+
+  void _removeDigit() {
+    if (_confirming) {
+      if (_confirmPin.isEmpty) {
+        setState(() {
+          _confirming = false;
+          _confirmPin = '';
+        });
+      } else {
+        setState(() => _confirmPin = _confirmPin.substring(0, _confirmPin.length - 1));
+      }
+    } else {
+      if (_pin.isEmpty) return;
+      setState(() => _pin = _pin.substring(0, _pin.length - 1));
+    }
+  }
+
+  Future<void> _checkConfirm() async {
+    if (_confirmPin == _pin) {
+      await AuthService.savePin(widget.loginId, _pin);
+      if (mounted) Navigator.of(context).pop(true);
+    } else {
+      setState(() {
+        _error = 'PINs do not match. Try again.';
+        _confirmPin = '';
+        _pin = '';
+        _confirming = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
-        ),
+    final current = _confirming ? _confirmPin : _pin;
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(height: 7),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: color,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                height: 1.3,
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: const Color(0xFF854CF4).withValues(alpha: 0.1),
+                shape: BoxShape.circle,
               ),
+              child: const Icon(Icons.pin_rounded, size: 30, color: Color(0xFF854CF4)),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              _confirming ? 'Confirm PIN' : 'Set Profile PIN',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _confirming
+                  ? 'Re-enter your 6-digit PIN to confirm'
+                  : 'Create a 6-digit PIN to secure your profile',
+              style: const TextStyle(color: Colors.black54, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+
+            // Step indicator
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _StepDot(active: !_confirming, done: _confirming, label: '1'),
+                Container(width: 28, height: 2, color: _confirming ? const Color(0xFF854CF4) : Colors.grey.shade300),
+                _StepDot(active: _confirming, done: false, label: '2'),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // Dots
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(6, (i) {
+                final filled = i < current.length;
+                return Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 7),
+                  width: 14,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: filled ? const Color(0xFF854CF4) : Colors.transparent,
+                    border: Border.all(
+                      color: filled ? const Color(0xFF854CF4) : Colors.grey.shade400,
+                      width: 1.5,
+                    ),
+                  ),
+                );
+              }),
+            ),
+
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(_error!,
+                  style: const TextStyle(
+                      color: Colors.red, fontSize: 12, fontWeight: FontWeight.w500)),
+            ],
+
+            const SizedBox(height: 22),
+
+            ...List.generate(3, (row) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(3, (col) {
+                    final digit = '${row * 3 + col + 1}';
+                    return _PinKey(label: digit, onTap: () => _addDigit(digit));
+                  }),
+                ),
+              );
+            }),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(width: 72),
+                _PinKey(label: '0', onTap: () => _addDigit('0')),
+                _PinKey(icon: Icons.backspace_outlined, onTap: _removeDigit),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel', style: TextStyle(color: Colors.black54)),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _StepDot extends StatelessWidget {
+  final bool active;
+  final bool done;
+  final String label;
+  const _StepDot({required this.active, required this.done, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = (active || done) ? const Color(0xFF854CF4) : Colors.grey.shade300;
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+      alignment: Alignment.center,
+      child: done
+          ? const Icon(Icons.check, size: 14, color: Colors.white)
+          : Text(label, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+    );
+  }
+}
+
+// ─── PIN Entry Dialog ─────────────────────────────────────────────────────────
+
+class _PinEntryDialog extends StatefulWidget {
+  final String loginId;
+  const _PinEntryDialog({required this.loginId});
+
+  @override
+  State<_PinEntryDialog> createState() => _PinEntryDialogState();
+}
+
+class _PinEntryDialogState extends State<_PinEntryDialog>
+    with SingleTickerProviderStateMixin {
+  String _pin = '';
+  String? _error;
+  late AnimationController _shakeCtrl;
+  late Animation<double> _shakeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _shakeCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 450));
+    _shakeAnim = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _shakeCtrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _shakeCtrl.dispose();
+    super.dispose();
+  }
+
+  void _addDigit(String digit) {
+    if (_pin.length >= 6) return;
+    setState(() {
+      _pin += digit;
+      _error = null;
+    });
+    if (_pin.length == 6) _verify();
+  }
+
+  void _removeDigit() {
+    if (_pin.isEmpty) return;
+    setState(() => _pin = _pin.substring(0, _pin.length - 1));
+  }
+
+  Future<void> _verify() async {
+    final valid = await AuthService.verifyPin(widget.loginId, _pin);
+    if (valid) {
+      if (mounted) Navigator.of(context).pop(true);
+    } else {
+      await _shakeCtrl.forward(from: 0);
+      setState(() {
+        _error = 'Incorrect PIN. Try again.';
+        _pin = '';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Lock icon
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: const Color(0xFF854CF4).withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.lock_rounded,
+                  size: 30, color: Color(0xFF854CF4)),
+            ),
+            const SizedBox(height: 14),
+            const Text('Enter Profile PIN',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            const Text('Enter your 6-digit PIN to continue',
+                style: TextStyle(color: Colors.black54, fontSize: 13)),
+            const SizedBox(height: 24),
+
+            // Dot indicators with shake
+            AnimatedBuilder(
+              animation: _shakeAnim,
+              builder: (ctx, child) {
+                final offset = _shakeCtrl.isAnimating
+                    ? 8 * math.sin(_shakeAnim.value * math.pi * 6)
+                    : 0.0;
+                return Transform.translate(
+                    offset: Offset(offset, 0), child: child!);
+              },
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(6, (i) {
+                  final filled = i < _pin.length;
+                  return Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 7),
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: filled
+                          ? const Color(0xFF854CF4)
+                          : Colors.transparent,
+                      border: Border.all(
+                        color: filled
+                            ? const Color(0xFF854CF4)
+                            : Colors.grey.shade400,
+                        width: 1.5,
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(_error!,
+                  style: const TextStyle(
+                      color: Colors.red,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500)),
+            ],
+
+            const SizedBox(height: 22),
+
+            // Number pad rows 1-9
+            ...List.generate(3, (row) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(3, (col) {
+                    final digit = '${row * 3 + col + 1}';
+                    return _PinKey(label: digit, onTap: () => _addDigit(digit));
+                  }),
+                ),
+              );
+            }),
+
+            // Bottom row: empty, 0, backspace
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(width: 72),
+                _PinKey(label: '0', onTap: () => _addDigit('0')),
+                _PinKey(
+                    icon: Icons.backspace_outlined, onTap: _removeDigit),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel',
+                  style: TextStyle(color: Colors.black54)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PinKey extends StatelessWidget {
+  final String? label;
+  final IconData? icon;
+  final VoidCallback onTap;
+  const _PinKey({this.label, this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 8),
+        width: 66,
+        height: 66,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.grey.shade100,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        alignment: Alignment.center,
+        child: label != null
+            ? Text(label!,
+                style: const TextStyle(
+                    fontSize: 22, fontWeight: FontWeight.w600))
+            : Icon(icon, size: 22, color: Colors.black87),
       ),
     );
   }

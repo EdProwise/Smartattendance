@@ -22,8 +22,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
   // School fields
   final _schoolNameCtrl = TextEditingController();
 
+  // PIN fields
+  final _pinCtrl = TextEditingController();
+  final _pinConfirmCtrl = TextEditingController();
+
   bool _obscurePass = true;
   bool _obscureConfirm = true;
+  bool _obscurePin = true;
+  bool _obscurePinConfirm = true;
   bool _loading = false;
   String? _error;
 
@@ -34,6 +40,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     _schoolNameCtrl.dispose();
+    _pinCtrl.dispose();
+    _pinConfirmCtrl.dispose();
     super.dispose();
   }
 
@@ -48,6 +56,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         schoolName: _schoolNameCtrl.text.trim(),
         schoolEmail: _emailCtrl.text.trim(),
       );
+      await AuthService.savePin(_loginIdCtrl.text.trim(), _pinCtrl.text);
       if (mounted) context.go('/');
     } on ApiException catch (e) {
       setState(() { _error = e.message; _loading = false; });
@@ -201,11 +210,69 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
                           ),
                         ),
-                        textInputAction: TextInputAction.done,
-                        onFieldSubmitted: (_) => _register(),
+                        textInputAction: TextInputAction.next,
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Please confirm your password';
                           if (v != _passwordCtrl.text) return 'Passwords do not match';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 24),
+
+                      // ── Profile PIN ──────────────────────────────────────
+                      _sectionLabel(Icons.pin_rounded, 'Profile PIN'),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Set a 6-digit PIN to access your profile',
+                        style: TextStyle(color: Colors.black54, fontSize: 12),
+                      ),
+                      const SizedBox(height: 12),
+
+                      TextFormField(
+                        controller: _pinCtrl,
+                        keyboardType: TextInputType.number,
+                        obscureText: _obscurePin,
+                        maxLength: 6,
+                        decoration: InputDecoration(
+                          labelText: 'Profile PIN *',
+                          prefixIcon: const Icon(Icons.pin_outlined),
+                          border: const OutlineInputBorder(),
+                          counterText: '',
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscurePin ? Icons.visibility_off : Icons.visibility),
+                            onPressed: () => setState(() => _obscurePin = !_obscurePin),
+                          ),
+                        ),
+                        textInputAction: TextInputAction.next,
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'PIN is required';
+                          if (v.length != 6) return 'PIN must be exactly 6 digits';
+                          if (!RegExp(r'^\d{6}$').hasMatch(v)) return 'PIN must contain digits only';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+
+                      TextFormField(
+                        controller: _pinConfirmCtrl,
+                        keyboardType: TextInputType.number,
+                        obscureText: _obscurePinConfirm,
+                        maxLength: 6,
+                        decoration: InputDecoration(
+                          labelText: 'Confirm PIN *',
+                          prefixIcon: const Icon(Icons.pin_outlined),
+                          border: const OutlineInputBorder(),
+                          counterText: '',
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscurePinConfirm ? Icons.visibility_off : Icons.visibility),
+                            onPressed: () => setState(() => _obscurePinConfirm = !_obscurePinConfirm),
+                          ),
+                        ),
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => _register(),
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Please confirm your PIN';
+                          if (v != _pinCtrl.text) return 'PINs do not match';
                           return null;
                         },
                       ),
