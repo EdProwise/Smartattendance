@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
 import '../services/camera_service.dart';
 import '../services/file_io_service.dart';
-import '../widgets/platform_camera_view.dart';
 
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key});
@@ -118,11 +117,11 @@ class _ScanScreenState extends State<ScanScreen>
     );
   }
 
-  void _autoScanTick() {
+  Future<void> _autoScanTick() async {
     if (!mounted || _processingFrame || _result != null) return;
-    final frame = CameraService.scan.captureFrame();
+    final frame = await CameraService.scan.captureFrame();
     if (frame == null) return;
-    _processScan(frame.base64, capturedDataUrl: frame.dataUrl);
+    await _processScan(frame.base64, capturedDataUrl: frame.dataUrl);
   }
 
   // ─── Process / API ───────────────────────────────────────────────────────────
@@ -377,7 +376,7 @@ class _LiveScanView extends StatelessWidget {
       children: [
         // ── Camera feed ──────────────────────────────────────────────────────
         ClipRect(
-          child: buildCameraView(CameraService.scan.viewType),
+          child: CameraService.scan.buildPreview(),
         ),
 
         // ── Semi-dark corners overlay ────────────────────────────────────────

@@ -519,9 +519,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // ─── Primary Action Buttons ──────────────────────────────────────────────────
 
   Widget _buildActionButtons(bool isCheckedIn, bool isCheckedOut) {
-    final enrolled = _stats?.enrolledEmployees ?? 0;
-    final allCheckedOut = enrolled > 0 && (_stats?.checkoutToday ?? 0) >= enrolled;
-
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -539,8 +536,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           icon: Icons.logout_rounded,
           colorLight: const Color(0xFFEF5350),
           colorDark: const Color(0xFFB71C1C),
-          done: allCheckedOut,
-          onTap: allCheckedOut ? null : _handleCheckOut,
+          done: false,
+          onTap: _handleCheckOut,
         ),
       ],
     );
@@ -806,43 +803,16 @@ class _SetPinDialog extends StatefulWidget {
 }
 
 class _SetPinDialogState extends State<_SetPinDialog> {
+  final TextEditingController _ctrl = TextEditingController();
   String _pin = '';
   String _confirmPin = '';
   bool _confirming = false;
   String? _error;
 
-  void _addDigit(String digit) {
-    if (_confirming) {
-      if (_confirmPin.length >= 6) return;
-      setState(() {
-        _confirmPin += digit;
-        _error = null;
-      });
-      if (_confirmPin.length == 6) _checkConfirm();
-    } else {
-      if (_pin.length >= 6) return;
-      setState(() {
-        _pin += digit;
-        _error = null;
-      });
-      if (_pin.length == 6) setState(() => _confirming = true);
-    }
-  }
-
-  void _removeDigit() {
-    if (_confirming) {
-      if (_confirmPin.isEmpty) {
-        setState(() {
-          _confirming = false;
-          _confirmPin = '';
-        });
-      } else {
-        setState(() => _confirmPin = _confirmPin.substring(0, _confirmPin.length - 1));
-      }
-    } else {
-      if (_pin.isEmpty) return;
-      setState(() => _pin = _pin.substring(0, _pin.length - 1));
-    }
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
   }
 
   Future<void> _checkConfirm() async {
@@ -856,6 +826,7 @@ class _SetPinDialogState extends State<_SetPinDialog> {
         _pin = '';
         _confirming = false;
       });
+      _ctrl.clear();
     }
   }
 
@@ -932,28 +903,45 @@ class _SetPinDialogState extends State<_SetPinDialog> {
                       color: Colors.red, fontSize: 12, fontWeight: FontWeight.w500)),
             ],
 
-            const SizedBox(height: 22),
+            const SizedBox(height: 16),
 
-            ...List.generate(3, (row) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(3, (col) {
-                    final digit = '${row * 3 + col + 1}';
-                    return _PinKey(label: digit, onTap: () => _addDigit(digit));
-                  }),
-                ),
-              );
-            }),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const SizedBox(width: 72),
-                _PinKey(label: '0', onTap: () => _addDigit('0')),
-                _PinKey(icon: Icons.backspace_outlined, onTap: _removeDigit),
-              ],
+            // Invisible field — triggers device numpad
+            TextField(
+              controller: _ctrl,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.transparent, fontSize: 16),
+              cursorColor: Colors.transparent,
+              decoration: const InputDecoration(
+                counterText: '',
+                hintText: 'Tap here to enter PIN',
+                hintStyle: TextStyle(color: Colors.black26, fontSize: 13),
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(vertical: 12),
+              ),
+              onChanged: (val) {
+                if (val.length > 6) return;
+                setState(() {
+                  _error = null;
+                  if (!_confirming) {
+                    _pin = val;
+                  } else {
+                    _confirmPin = val;
+                  }
+                });
+                if (!_confirming && val.length == 6) {
+                  Future.microtask(() {
+                    if (mounted) {
+                      setState(() => _confirming = true);
+                      _ctrl.clear();
+                    }
+                  });
+                } else if (_confirming && val.length == 6) {
+                  _checkConfirm();
+                }
+              },
             ),
 
             const SizedBox(height: 14),
@@ -1001,6 +989,7 @@ class _PinEntryDialog extends StatefulWidget {
 
 class _PinEntryDialogState extends State<_PinEntryDialog>
     with SingleTickerProviderStateMixin {
+  final TextEditingController _ctrl = TextEditingController();
   String _pin = '';
   String? _error;
   late AnimationController _shakeCtrl;
@@ -1018,22 +1007,9 @@ class _PinEntryDialogState extends State<_PinEntryDialog>
 
   @override
   void dispose() {
+    _ctrl.dispose();
     _shakeCtrl.dispose();
     super.dispose();
-  }
-
-  void _addDigit(String digit) {
-    if (_pin.length >= 6) return;
-    setState(() {
-      _pin += digit;
-      _error = null;
-    });
-    if (_pin.length == 6) _verify();
-  }
-
-  void _removeDigit() {
-    if (_pin.isEmpty) return;
-    setState(() => _pin = _pin.substring(0, _pin.length - 1));
   }
 
   Future<void> _verify() async {
@@ -1042,10 +1018,13 @@ class _PinEntryDialogState extends State<_PinEntryDialog>
       if (mounted) Navigator.of(context).pop(true);
     } else {
       await _shakeCtrl.forward(from: 0);
-      setState(() {
-        _error = 'Incorrect PIN. Try again.';
-        _pin = '';
-      });
+      if (mounted) {
+        setState(() {
+          _error = 'Incorrect PIN. Try again.';
+          _pin = '';
+        });
+        _ctrl.clear();
+      }
     }
   }
 
@@ -1121,31 +1100,32 @@ class _PinEntryDialogState extends State<_PinEntryDialog>
                       fontWeight: FontWeight.w500)),
             ],
 
-            const SizedBox(height: 22),
+            const SizedBox(height: 16),
 
-            // Number pad rows 1-9
-            ...List.generate(3, (row) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(3, (col) {
-                    final digit = '${row * 3 + col + 1}';
-                    return _PinKey(label: digit, onTap: () => _addDigit(digit));
-                  }),
-                ),
-              );
-            }),
-
-            // Bottom row: empty, 0, backspace
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const SizedBox(width: 72),
-                _PinKey(label: '0', onTap: () => _addDigit('0')),
-                _PinKey(
-                    icon: Icons.backspace_outlined, onTap: _removeDigit),
-              ],
+            // Invisible field — triggers device numpad
+            TextField(
+              controller: _ctrl,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.transparent, fontSize: 16),
+              cursorColor: Colors.transparent,
+              decoration: const InputDecoration(
+                counterText: '',
+                hintText: 'Tap here to enter PIN',
+                hintStyle: TextStyle(color: Colors.black26, fontSize: 13),
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(vertical: 12),
+              ),
+              onChanged: (val) {
+                if (val.length > 6) return;
+                setState(() {
+                  _pin = val;
+                  _error = null;
+                });
+                if (val.length == 6) _verify();
+              },
             ),
 
             const SizedBox(height: 14),
@@ -1156,42 +1136,6 @@ class _PinEntryDialogState extends State<_PinEntryDialog>
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _PinKey extends StatelessWidget {
-  final String? label;
-  final IconData? icon;
-  final VoidCallback onTap;
-  const _PinKey({this.label, this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-        width: 66,
-        height: 66,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.grey.shade100,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: label != null
-            ? Text(label!,
-                style: const TextStyle(
-                    fontSize: 22, fontWeight: FontWeight.w600))
-            : Icon(icon, size: 22, color: Colors.black87),
       ),
     );
   }

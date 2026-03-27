@@ -1,6 +1,7 @@
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'dart:ui_web' as ui;
+import 'package:flutter/widgets.dart';
 
 class CaptureResult {
   final String base64;
@@ -68,7 +69,10 @@ class CameraService {
   Future<CaptureResult?> captureFromCamera({bool frontFacing = true}) async =>
       null;
 
-  CaptureResult? captureFrame() {
+  /// Returns an [HtmlElementView] for displaying the live camera feed.
+  Widget buildPreview() => HtmlElementView(viewType: _viewType);
+
+  Future<CaptureResult?> captureFrame() async {
     if (_video.videoWidth == 0 || _video.videoHeight == 0) return null;
     final canvas = html.CanvasElement(
       width: _video.videoWidth,

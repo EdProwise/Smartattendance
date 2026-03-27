@@ -13,8 +13,11 @@ dependencies:
   # HTTP
   http: ^1.2.1
 
-  # Image picker (camera + gallery on mobile; web uses custom WebCameraService)
+  # Image picker (gallery on mobile)
   image_picker: ^1.1.2
+
+  # In-app camera preview on Android/iOS
+  camera: ^0.12.0+1
 
   # Navigation
   go_router: ^14.2.7

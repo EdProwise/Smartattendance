@@ -537,10 +537,10 @@ class _EnrollCameraDialogState extends State<_EnrollCameraDialog> {
     }
   }
 
-  void _capture() {
-    final result = CameraService.enroll.captureFrame();
+  Future<void> _capture() async {
+    final result = await CameraService.enroll.captureFrame();
     CameraService.enroll.stopCamera();
-    if (result == null) return;
+    if (result == null || !mounted) return;
     setState(() {
       _capturedBase64 = result.base64;
       _capturedDataUrl = result.dataUrl;

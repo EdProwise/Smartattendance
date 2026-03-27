@@ -1,6 +1,8 @@
-// Stub camera service — used on unsupported platforms.
+// Stub camera service — used on unsupported platforms (e.g. desktop).
 // Web overrides this with camera_service_web.dart
 // Mobile (Android/iOS) overrides with camera_service_native.dart
+
+import 'package:flutter/widgets.dart';
 
 class CaptureResult {
   final String base64;
@@ -23,6 +25,7 @@ class CameraService {
   void init() {}
   Future<void> startLiveCamera({bool frontFacing = true}) async {}
   Future<CaptureResult?> captureFromCamera({bool frontFacing = true}) async => null;
-  CaptureResult? captureFrame() => null;
+  Future<CaptureResult?> captureFrame() async => null;
+  Widget buildPreview() => const SizedBox.shrink();
   void stopCamera() {}
 }

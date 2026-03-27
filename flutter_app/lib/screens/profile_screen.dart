@@ -789,6 +789,7 @@ class _ChangePinDialog extends StatefulWidget {
 class _ChangePinDialogState extends State<_ChangePinDialog>
     with SingleTickerProviderStateMixin {
   // Steps: 0 = verify current (only if hasPin), 1 = enter new, 2 = confirm new
+  final TextEditingController _ctrl = TextEditingController();
   late int _step;
   String _current = '';
   String _newPin = '';
@@ -810,6 +811,7 @@ class _ChangePinDialogState extends State<_ChangePinDialog>
 
   @override
   void dispose() {
+    _ctrl.dispose();
     _shakeCtrl.dispose();
     super.dispose();
   }
@@ -820,40 +822,26 @@ class _ChangePinDialogState extends State<_ChangePinDialog>
     return _confirmPin;
   }
 
-  void _addDigit(String digit) {
-    if (_activePin.length >= 6) return;
-    setState(() {
-      _error = null;
-      if (_step == 0) _current += digit;
-      else if (_step == 1) _newPin += digit;
-      else _confirmPin += digit;
-    });
-    if (_activePin.length == 6) _handleComplete();
-  }
-
-  void _removeDigit() {
-    setState(() {
-      if (_step == 0 && _current.isNotEmpty) {
-        _current = _current.substring(0, _current.length - 1);
-      } else if (_step == 1 && _newPin.isNotEmpty) {
-        _newPin = _newPin.substring(0, _newPin.length - 1);
-      } else if (_step == 2 && _confirmPin.isNotEmpty) {
-        _confirmPin = _confirmPin.substring(0, _confirmPin.length - 1);
-      }
-    });
-  }
-
   Future<void> _handleComplete() async {
     if (_step == 0) {
       final valid = await AuthService.verifyPin(widget.loginId, _current);
       if (valid) {
-        setState(() { _step = 1; _current = ''; });
+        if (mounted) {
+          setState(() { _step = 1; _current = ''; });
+          _ctrl.clear();
+        }
       } else {
         await _shakeCtrl.forward(from: 0);
-        setState(() { _error = 'Incorrect current PIN.'; _current = ''; });
+        if (mounted) {
+          setState(() { _error = 'Incorrect current PIN.'; _current = ''; });
+          _ctrl.clear();
+        }
       }
     } else if (_step == 1) {
-      setState(() => _step = 2);
+      if (mounted) {
+        setState(() => _step = 2);
+        _ctrl.clear();
+      }
     } else {
       if (_confirmPin == _newPin) {
         await AuthService.savePin(widget.loginId, _newPin);
@@ -866,12 +854,15 @@ class _ChangePinDialogState extends State<_ChangePinDialog>
         }
       } else {
         await _shakeCtrl.forward(from: 0);
-        setState(() {
-          _error = 'PINs do not match. Try again.';
-          _confirmPin = '';
-          _newPin = '';
-          _step = 1;
-        });
+        if (mounted) {
+          setState(() {
+            _error = 'PINs do not match. Try again.';
+            _confirmPin = '';
+            _newPin = '';
+            _step = 1;
+          });
+          _ctrl.clear();
+        }
       }
     }
   }
@@ -977,28 +968,34 @@ class _ChangePinDialogState extends State<_ChangePinDialog>
                       color: Colors.red, fontSize: 12, fontWeight: FontWeight.w500)),
             ],
 
-            const SizedBox(height: 22),
+            const SizedBox(height: 16),
 
-            ...List.generate(3, (row) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(3, (col) {
-                    final digit = '${row * 3 + col + 1}';
-                    return _PinKeyP(label: digit, onTap: () => _addDigit(digit));
-                  }),
-                ),
-              );
-            }),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const SizedBox(width: 72),
-                _PinKeyP(label: '0', onTap: () => _addDigit('0')),
-                _PinKeyP(icon: Icons.backspace_outlined, onTap: _removeDigit),
-              ],
+            // Invisible field — triggers device numpad
+            TextField(
+              controller: _ctrl,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.transparent, fontSize: 16),
+              cursorColor: Colors.transparent,
+              decoration: const InputDecoration(
+                counterText: '',
+                hintText: 'Tap here to enter PIN',
+                hintStyle: TextStyle(color: Colors.black26, fontSize: 13),
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(vertical: 12),
+              ),
+              onChanged: (val) {
+                if (val.length > 6) return;
+                setState(() {
+                  _error = null;
+                  if (_step == 0) _current = val;
+                  else if (_step == 1) _newPin = val;
+                  else _confirmPin = val;
+                });
+                if (val.length == 6) _handleComplete();
+              },
             ),
 
             const SizedBox(height: 14),
@@ -1032,41 +1029,6 @@ class _StepDot extends StatelessWidget {
           : Text(label,
               style: const TextStyle(
                   color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-    );
-  }
-}
-
-class _PinKeyP extends StatelessWidget {
-  final String? label;
-  final IconData? icon;
-  final VoidCallback onTap;
-  const _PinKeyP({this.label, this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-        width: 66,
-        height: 66,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.grey.shade100,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: label != null
-            ? Text(label!,
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600))
-            : Icon(icon, size: 22, color: Colors.black87),
-      ),
     );
   }
 }
