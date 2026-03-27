@@ -29,7 +29,6 @@ class ApiService {
   }
 
   static Future<School> createSchool({
-    required String schoolCode,
     required String name,
     String address = '',
     String phone = '',
@@ -38,7 +37,7 @@ class ApiService {
     final res = await _client.post(
       Uri.parse('$baseUrl/schools'),
       headers: _headers,
-      body: jsonEncode({'schoolCode': schoolCode, 'name': name, 'address': address, 'phone': phone, 'email': email}),
+      body: jsonEncode({'name': name, 'address': address, 'phone': phone, 'email': email}),
     );
     _check(res);
     return School.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
@@ -104,7 +103,6 @@ class ApiService {
 
   static Future<Employee> createEmployee({
     String? schoolId,
-    required String employeeId,
     required String name,
     required String designation,
     required String grade,
@@ -117,7 +115,6 @@ class ApiService {
       headers: _headers,
       body: jsonEncode({
         if (schoolId != null) 'schoolId': schoolId,
-        'employeeId': employeeId,
         'name': name,
         'designation': designation,
         'grade': grade,

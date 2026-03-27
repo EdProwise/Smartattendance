@@ -123,7 +123,6 @@ class _AdminScreenState extends State<AdminScreen> {
         onAdd: (data) async {
           await ApiService.createEmployee(
             schoolId: _schoolId,
-            employeeId: data['employeeId']!,
             name: data['name']!,
             designation: data['designation']!,
             grade: data['grade']!,
@@ -308,7 +307,6 @@ class _AddEmployeeDialog extends StatefulWidget {
 
 class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
   final _formKey = GlobalKey<FormState>();
-  final _empIdCtrl       = TextEditingController();
   final _nameCtrl        = TextEditingController();
   final _mobileCtrl      = TextEditingController();
   final _designationCtrl = TextEditingController();
@@ -320,7 +318,6 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
 
   @override
   void dispose() {
-    _empIdCtrl.dispose();
     _nameCtrl.dispose();
     _mobileCtrl.dispose();
     _designationCtrl.dispose();
@@ -335,7 +332,6 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
     setState(() { _saving = true; _errorMsg = null; });
     try {
       await widget.onAdd({
-        'employeeId':  _empIdCtrl.text.trim(),
         'name':        _nameCtrl.text.trim(),
         'designation': _designationCtrl.text.trim(),
         'grade':       _gradeCtrl.text.trim(),
@@ -345,13 +341,7 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
       });
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted) {
-        String msg = e.toString();
-        if (msg.contains('409') || msg.toLowerCase().contains('already exists') || msg.toLowerCase().contains('duplicate')) {
-          msg = 'Employee ID "${_empIdCtrl.text.trim()}" already exists. Please use a different ID.';
-        }
-        setState(() { _saving = false; _errorMsg = msg; });
-      }
+      if (mounted) setState(() { _saving = false; _errorMsg = e.toString(); });
     }
   }
 
@@ -396,13 +386,7 @@ class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
                     children: [
                       _sectionLabel('Basic Information'),
                       const SizedBox(height: 10),
-                      Row(children: [
-                        Expanded(child: _field(_empIdCtrl, 'Employee ID *', Icons.badge,
-                            validator: _required)),
-                        const SizedBox(width: 12),
-                        Expanded(child: _field(_nameCtrl, 'Full Name *', Icons.person,
-                            validator: _required)),
-                      ]),
+                      _field(_nameCtrl, 'Full Name *', Icons.person, validator: _required),
                       const SizedBox(height: 12),
                       _field(_mobileCtrl, 'Mobile Number', Icons.phone,
                           keyboard: TextInputType.phone),

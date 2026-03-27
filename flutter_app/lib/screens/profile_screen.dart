@@ -63,7 +63,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
     if (confirm == true && mounted) {
       await AuthService.logout();
-      if (mounted) context.go('/');
+      if (mounted) context.pop();
     }
   }
 

@@ -22,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   List<AttendanceRecord> _todayRecords = [];
   bool _loadingRecords = false;
+  AttendanceStats? _stats;
 
   DateTime? _checkinTime;
   DateTime? _checkoutTime;
@@ -75,8 +76,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     setState(() => _loadingRecords = true);
     try {
       final dateStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      final records = await ApiService.getAttendance(date: dateStr, schoolId: _user?.schoolId);
-      if (mounted) setState(() { _todayRecords = records; _loadingRecords = false; });
+      final results = await Future.wait([
+        ApiService.getAttendance(date: dateStr, schoolId: _user?.schoolId),
+        ApiService.getStats(schoolId: _user?.schoolId),
+      ]);
+      if (mounted) {
+        setState(() {
+          _todayRecords = results[0] as List<AttendanceRecord>;
+          _stats = results[1] as AttendanceStats;
+          _loadingRecords = false;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _loadingRecords = false);
     }
@@ -273,30 +283,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ],
               ),
               const Spacer(),
-              IconButton(
-                icon: Stack(
-                  children: [
-                    const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 26),
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFFF5722),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                onPressed: () {},
-                tooltip: 'Notifications',
-              ),
               if (_user != null)
                 GestureDetector(
-                  onTap: () => context.push('/profile'),
+                  onTap: () => context.push('/profile').then((_) => _loadUser()),
                   child: CircleAvatar(
                     radius: 19,
                     backgroundColor: Colors.white.withValues(alpha: 0.22),
@@ -509,6 +498,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // ─── Primary Action Buttons ──────────────────────────────────────────────────
 
   Widget _buildActionButtons(bool isCheckedIn, bool isCheckedOut) {
+    final enrolled = _stats?.enrolledEmployees ?? 0;
+    final allCheckedOut = enrolled > 0 && (_stats?.checkoutToday ?? 0) >= enrolled;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -517,7 +509,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           icon: Icons.login_rounded,
           colorLight: const Color(0xFF43A047),
           colorDark: const Color(0xFF1B5E20),
-          done: isCheckedIn || isCheckedOut,
+          done: false,
           onTap: _handleCheckIn,
         ),
         const SizedBox(width: 28),
@@ -526,8 +518,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           icon: Icons.logout_rounded,
           colorLight: const Color(0xFFEF5350),
           colorDark: const Color(0xFFB71C1C),
-          done: isCheckedOut,
-          onTap: _handleCheckOut,
+          done: allCheckedOut,
+          onTap: allCheckedOut ? null : _handleCheckOut,
         ),
       ],
     );
@@ -539,7 +531,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     required Color colorLight,
     required Color colorDark,
     required bool done,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -640,19 +632,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ),
       );
     }
-    return SizedBox(
-      width: 220,
-      child: OutlinedButton.icon(
-        onPressed: _logout,
-        icon: const Icon(Icons.logout_rounded, color: Colors.red),
-        label: const Text('Logout', style: TextStyle(color: Colors.red)),
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: Colors.red),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      ),
-    );
+    return const SizedBox.shrink();
   }
 
   // ─── Info Row ────────────────────────────────────────────────────────────────

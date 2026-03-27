@@ -88,6 +88,26 @@ function serializeSchool(s: any) {
   };
 }
 
+// ─── ID Generators ───────────────────────────────────────────────────────────
+
+function rand8digits(): string {
+  return String(Math.floor(10000000 + Math.random() * 90000000));
+}
+
+async function generateUniqueSchoolCode(): Promise<string> {
+  let code: string;
+  do { code = 'SCH' + rand8digits(); }
+  while (await School.exists({ schoolCode: code }));
+  return code;
+}
+
+async function generateUniqueEmployeeId(): Promise<string> {
+  let id: string;
+  do { id = 'EMP' + rand8digits(); }
+  while (await Employee.exists({ employeeId: id }));
+  return id;
+}
+
 // ─── Schools ─────────────────────────────────────────────────────────────────
 
 app.get('/schools', async (c) => {
@@ -109,11 +129,12 @@ app.get('/schools/:id', async (c) => {
 });
 
 app.post('/schools', async (c) => {
-  const body = await c.req.json<{ schoolCode: string; name: string; address?: string; phone?: string; email?: string }>();
-  if (!body.schoolCode || !body.name) return c.json({ error: 'schoolCode and name are required' }, 400);
+  const body = await c.req.json<{ name: string; address?: string; phone?: string; email?: string }>();
+  if (!body.name) return c.json({ error: 'name is required' }, 400);
   try {
+    const schoolCode = await generateUniqueSchoolCode();
     const school = await School.create({
-      schoolCode: body.schoolCode.trim().toUpperCase(),
+      schoolCode,
       name: body.name.trim(),
       address: body.address ?? '',
       phone: body.phone ?? '',
@@ -121,7 +142,6 @@ app.post('/schools', async (c) => {
     });
     return c.json(serializeSchool(school.toObject()), 201);
   } catch (err: any) {
-    if (err.code === 11000) return c.json({ error: 'School code already exists' }, 409);
     return c.json({ error: 'Failed to create school' }, 500);
   }
 });
@@ -186,14 +206,15 @@ app.get('/employees/:id', async (c) => {
 
 app.post('/employees', async (c) => {
   const body = await c.req.json<{
-    schoolId?: string; employeeId: string; name: string; designation?: string;
+    schoolId?: string; employeeId?: string; name: string; designation?: string;
     grade?: string; category?: string; gender?: string; mobile?: string;
   }>();
-  if (!body.employeeId || !body.name) return c.json({ error: 'employeeId and name are required' }, 400);
+  if (!body.name) return c.json({ error: 'name is required' }, 400);
   try {
+    const employeeId = body.employeeId?.trim() || await generateUniqueEmployeeId();
     const emp = await Employee.create({
       schoolId: body.schoolId ?? null,
-      employeeId: body.employeeId,
+      employeeId,
       name: body.name,
       designation: body.designation ?? '',
       grade: body.grade ?? '',
@@ -215,14 +236,15 @@ app.post('/employees/bulk', async (c) => {
   }
   const results: { success: boolean; employeeId: string; error?: string }[] = [];
   for (const row of body.employees) {
-    if (!row.employeeId || !row.name) {
+    if (!row.name) {
       results.push({ success: false, employeeId: row.employeeId ?? '?', error: 'Missing required fields' });
       continue;
     }
     try {
+      const empId = row.employeeId ? String(row.employeeId).trim() : await generateUniqueEmployeeId();
       await Employee.create({
         schoolId: body.schoolId ?? null,
-        employeeId: String(row.employeeId).trim(),
+        employeeId: empId,
         name: String(row.name).trim(),
         designation: String(row.designation ?? '').trim(),
         grade: String(row.grade ?? '').trim(),
@@ -230,9 +252,9 @@ app.post('/employees/bulk', async (c) => {
         gender: String(row.gender ?? '').trim(),
         mobile: String(row.mobile ?? row.email ?? '').trim(),
       });
-      results.push({ success: true, employeeId: String(row.employeeId) });
+      results.push({ success: true, employeeId: empId });
     } catch (err: any) {
-      results.push({ success: false, employeeId: String(row.employeeId), error: err.code === 11000 ? 'Duplicate ID' : 'Failed' });
+      results.push({ success: false, employeeId: row.employeeId ? String(row.employeeId) : '?', error: err.code === 11000 ? 'Duplicate ID' : 'Failed' });
     }
   }
   const succeeded = results.filter((r) => r.success).length;
@@ -413,15 +435,16 @@ app.get('/attendance/stats', async (c) => {
   const recQuery: Record<string, any> = { timestamp: { $gte: startOfDay, $lte: endOfDay } };
   if (schoolId) recQuery.schoolId = schoolId;
 
-  const [totalEmployees, enrolledEmployees, presentToday, unrecognizedToday, totalRecords] = await Promise.all([
+  const [totalEmployees, enrolledEmployees, presentToday, checkoutToday, unrecognizedToday, totalRecords] = await Promise.all([
     Employee.countDocuments(empQuery),
     Employee.countDocuments({ ...empQuery, faceDescriptor: { $exists: true, $ne: null, $not: { $size: 0 } } }),
     AttendanceRecord.countDocuments({ ...recQuery, status: 'present', type: 'checkin' }),
+    AttendanceRecord.countDocuments({ ...recQuery, status: 'present', type: 'checkout' }),
     AttendanceRecord.countDocuments({ ...recQuery, status: 'unrecognized' }),
     AttendanceRecord.countDocuments(schoolId ? { schoolId } : {}),
   ]);
 
-  return c.json({ totalEmployees, enrolledEmployees, presentToday, unrecognizedToday, totalRecords });
+  return c.json({ totalEmployees, enrolledEmployees, presentToday, checkoutToday, unrecognizedToday, totalRecords });
 });
 
 // ─── Password policy ─────────────────────────────────────────────────────────
@@ -439,8 +462,7 @@ app.post('/auth/register', async (c) => {
   if (!body.schoolName) return c.json({ error: 'schoolName is required' }, 400);
   if (!PASSWORD_REGEX.test(body.password)) return c.json({ error: 'Password must be at least 8 characters with 1 uppercase, 1 number and 1 symbol' }, 400);
   try {
-    // Auto-generate unique school code: SCH + 6 uppercase alphanumeric chars
-    const schoolCode = 'SCH' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    const schoolCode = await generateUniqueSchoolCode();
     const school = await School.create({
       schoolCode,
       name: body.schoolName,

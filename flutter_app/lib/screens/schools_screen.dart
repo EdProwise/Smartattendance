@@ -64,7 +64,6 @@ class _SchoolsScreenState extends State<SchoolsScreen> {
       builder: (_) => _SchoolDialog(
         onSave: (data) async {
           await ApiService.createSchool(
-            schoolCode: data['schoolCode']!,
             name: data['name']!,
             address: data['address'] ?? '',
             phone: data['phone'] ?? '',
@@ -282,14 +281,13 @@ class _SchoolDialog extends StatefulWidget {
 
 class _SchoolDialogState extends State<_SchoolDialog> {
   final _fk = GlobalKey<FormState>();
-  late final TextEditingController _code, _name, _address, _phone, _email;
+  late final TextEditingController _name, _address, _phone, _email;
   bool _saving = false;
   String? _err;
 
   @override
   void initState() {
     super.initState();
-    _code = TextEditingController(text: widget.school?.schoolCode ?? '');
     _name = TextEditingController(text: widget.school?.name ?? '');
     _address = TextEditingController(text: widget.school?.address ?? '');
     _phone = TextEditingController(text: widget.school?.phone ?? '');
@@ -298,7 +296,7 @@ class _SchoolDialogState extends State<_SchoolDialog> {
 
   @override
   void dispose() {
-    _code.dispose(); _name.dispose(); _address.dispose(); _phone.dispose(); _email.dispose();
+    _name.dispose(); _address.dispose(); _phone.dispose(); _email.dispose();
     super.dispose();
   }
 
@@ -307,7 +305,7 @@ class _SchoolDialogState extends State<_SchoolDialog> {
     setState(() { _saving = true; _err = null; });
     try {
       await widget.onSave({
-        'schoolCode': _code.text.trim(), 'name': _name.text.trim(),
+        'name': _name.text.trim(),
         'address': _address.text.trim(), 'phone': _phone.text.trim(), 'email': _email.text.trim(),
       });
       if (mounted) Navigator.pop(context);
@@ -344,11 +342,6 @@ class _SchoolDialogState extends State<_SchoolDialog> {
               child: Form(
                 key: _fk,
                 child: Column(children: [
-                  if (!isEdit) ...[
-                    _field(_code, 'School Code *', Icons.code,
-                        validator: (v) => (v?.isEmpty ?? true) ? 'Required' : null),
-                    const SizedBox(height: 12),
-                  ],
                   _field(_name, 'School Name *', Icons.school,
                       validator: (v) => (v?.isEmpty ?? true) ? 'Required' : null),
                   const SizedBox(height: 12),

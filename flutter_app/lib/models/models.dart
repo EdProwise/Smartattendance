@@ -125,6 +125,7 @@ class AttendanceStats {
   final int totalEmployees;
   final int enrolledEmployees;
   final int presentToday;
+  final int checkoutToday;
   final int unrecognizedToday;
   final int totalRecords;
 
@@ -132,6 +133,7 @@ class AttendanceStats {
     required this.totalEmployees,
     required this.enrolledEmployees,
     required this.presentToday,
+    required this.checkoutToday,
     required this.unrecognizedToday,
     required this.totalRecords,
   });
@@ -140,6 +142,7 @@ class AttendanceStats {
         totalEmployees: json['totalEmployees'] as int,
         enrolledEmployees: json['enrolledEmployees'] as int,
         presentToday: json['presentToday'] as int,
+        checkoutToday: json['checkoutToday'] as int? ?? 0,
         unrecognizedToday: json['unrecognizedToday'] as int,
         totalRecords: json['totalRecords'] as int,
       );
