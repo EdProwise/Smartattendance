@@ -378,7 +378,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: _QuickActionTile(
                     icon: Icons.list_alt_rounded,
                     label: 'Logs',
-                    color: const Color(0xFF6C3FC7),
+                    color: const Color(0xFF854CF4),
                     onTap: () {
                       Navigator.pop(context);
                       Future.microtask(() => GoRouter.of(context).push('/attendance'));
@@ -390,7 +390,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: _QuickActionTile(
                     icon: Icons.bar_chart_rounded,
                     label: 'Stats',
-                    color: const Color(0xFF04D3D3),
+                    color: const Color(0xFF854CF4),
                     onTap: () {
                       Navigator.pop(context);
                       Future.microtask(() => GoRouter.of(context).push('/stats'));

@@ -180,21 +180,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F0FF),
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: () async {
-            await _fetchTodayRecords();
-            await _loadLocalState();
-          },
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              // ── Header ──────────────────────────────────────────────────
-              _buildHeader(timeStr, dateStr),
-              const SizedBox(height: 20),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        child: Column(
+          children: [
+            // ── Fixed Header ─────────────────────────────────────────────
+            _buildHeader(timeStr, dateStr),
+
+            // ── Scrollable Content ────────────────────────────────────────
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: () async {
+                  await _fetchTodayRecords();
+                  await _loadLocalState();
+                },
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
                   children: [
                     // ── Attendance Status Card ───────────────────────────
                     _buildStatusCard(isCheckedIn, isCheckedOut, isNotMarked),
@@ -210,13 +209,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
                     // ── Info Cards ───────────────────────────────────────
                     _buildInfoRow(),
-                    const SizedBox(height: 28),
-
                   ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
