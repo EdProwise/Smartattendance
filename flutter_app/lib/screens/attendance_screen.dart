@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
@@ -56,7 +57,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final presentCount = _records.where((r) => r.status == 'present').length;
+    final checkinCount = _records.where((r) => r.type == 'checkin').length;
+    final checkoutCount = _records.where((r) => r.type == 'checkout').length;
     final unknownCount = _records.where((r) => r.status == 'unrecognized').length;
     final dateLabel = DateFormat('EEE, MMM d, yyyy').format(_selectedDate);
     final isToday = DateFormat('yyyy-MM-dd').format(_selectedDate) ==
@@ -65,6 +67,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF0F4FF),
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.go('/profile'),
+        ),
         title: const Text('Attendance Log'),
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: _fetchRecords),
@@ -113,19 +119,19 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               child: Row(
                 children: [
                   _SummaryChip(
-                      label: 'Present',
-                      count: presentCount,
+                      label: 'Check In',
+                      count: checkinCount,
                       color: const Color(0xFF2E7D32)),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   _SummaryChip(
-                      label: 'Unrecognized',
+                      label: 'Check Out',
+                      count: checkoutCount,
+                      color: const Color(0xFF1565C0)),
+                  const SizedBox(width: 8),
+                  _SummaryChip(
+                      label: 'Unknown',
                       count: unknownCount,
                       color: const Color(0xFFE65100)),
-                  const SizedBox(width: 10),
-                    _SummaryChip(
-                        label: 'Total',
-                        count: _records.length,
-                        color: const Color(0xFF854CF4)),
                 ],
               ),
             ),
@@ -213,7 +219,13 @@ class _RecordTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPresent = record.status == 'present';
-    final color = isPresent ? const Color(0xFF2E7D32) : const Color(0xFFE65100);
+    final isCheckout = record.type == 'checkout';
+
+    // Status color: green=present, orange=unrecognized
+    final statusColor = isPresent ? const Color(0xFF2E7D32) : const Color(0xFFE65100);
+    // Type color: green=checkin, blue=checkout
+    final typeColor = isCheckout ? const Color(0xFF1565C0) : const Color(0xFF2E7D32);
+    final typeIcon = isCheckout ? Icons.logout_rounded : Icons.login_rounded;
     final timeStr = DateFormat('hh:mm a').format(record.timestamp.toLocal());
 
     return Card(
@@ -222,10 +234,10 @@ class _RecordTile extends StatelessWidget {
         child: Row(
           children: [
             CircleAvatar(
-                backgroundColor: color.withValues(alpha: 0.12),
+              backgroundColor: typeColor.withValues(alpha: 0.12),
               child: Icon(
-                isPresent ? Icons.check_circle_rounded : Icons.help_outline_rounded,
-                color: color,
+                isPresent ? typeIcon : Icons.help_outline_rounded,
+                color: isPresent ? typeColor : statusColor,
               ),
             ),
             const SizedBox(width: 14),
@@ -245,18 +257,40 @@ class _RecordTile extends StatelessWidget {
               children: [
                 Text(timeStr,
                     style: TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 14, color: color)),
-                Container(
-                  margin: const EdgeInsets.only(top: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    isPresent ? 'Present' : 'Unknown',
-                    style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
-                  ),
+                        fontWeight: FontWeight.bold, fontSize: 14, color: typeColor)),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Type badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: typeColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: typeColor.withValues(alpha: 0.3)),
+                      ),
+                      child: Text(
+                        isCheckout ? 'Check Out' : 'Check In',
+                        style: TextStyle(fontSize: 11, color: typeColor, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    if (!isPresent) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: statusColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                        ),
+                        child: Text(
+                          'Unknown',
+                          style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),

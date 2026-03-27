@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
@@ -100,7 +101,7 @@ class _StatsScreenState extends State<StatsScreen> {
         children: [
           IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => context.go('/profile'),
             tooltip: 'Back',
           ),
           const SizedBox(width: 4),
@@ -390,36 +391,57 @@ class _StatsScreenState extends State<StatsScreen> {
   Widget _buildRecordTile(AttendanceRecord r) {
     final isPresent = r.status == 'present';
     final isUnrecognized = r.status == 'unrecognized';
-    final color = isPresent
-        ? const Color(0xFF2E7D32)
-        : isUnrecognized
-            ? const Color(0xFFF57C00)
-            : const Color(0xFF6B7280);
+    final isCheckout = r.type == 'checkout';
+
+    // Type color: green=checkin, blue=checkout
+    final typeColor = isCheckout ? const Color(0xFF1565C0) : const Color(0xFF2E7D32);
+    final statusColor = isUnrecognized ? const Color(0xFFF57C00) : const Color(0xFF6B7280);
+
     final icon = isPresent
-        ? Icons.check_circle_rounded
+        ? (isCheckout ? Icons.logout_rounded : Icons.login_rounded)
         : isUnrecognized
             ? Icons.help_rounded
             : Icons.cancel_rounded;
+    final iconColor = isPresent ? typeColor : statusColor;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         children: [
-          Icon(icon, color: color, size: 18),
+          Icon(icon, color: iconColor, size: 18),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              r.employeeName,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  r.employeeName,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (isPresent)
+                  Container(
+                    margin: const EdgeInsets.only(top: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: typeColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      isCheckout ? 'Check Out' : 'Check In',
+                      style: TextStyle(fontSize: 10, color: typeColor, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+              ],
             ),
           ),
+          const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
                 DateFormat('hh:mm a').format(r.timestamp.toLocal()),
-                style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 11, color: iconColor, fontWeight: FontWeight.w600),
               ),
               Text(
                 DateFormat('d MMM').format(r.timestamp.toLocal()),

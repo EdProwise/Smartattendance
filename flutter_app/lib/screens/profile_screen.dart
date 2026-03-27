@@ -173,7 +173,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => context.go('/'),
               ),
               const Expanded(
                 child: Text(
@@ -361,14 +361,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       label: 'Manage',
                       color: const Color(0xFF854CF4),
                       onTap: () {
-                        Navigator.pop(context);
-                        Future.microtask(() {
-                          if (user.isSuperAdmin) {
-                            GoRouter.of(context).push('/schools');
-                          } else {
-                            GoRouter.of(context).push('/admin');
-                          }
-                        });
+                        if (user.isSuperAdmin) {
+                          context.go('/schools');
+                        } else {
+                          context.go('/admin');
+                        }
                       },
                     ),
                   ),
@@ -379,10 +376,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     icon: Icons.list_alt_rounded,
                     label: 'Logs',
                     color: const Color(0xFF854CF4),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Future.microtask(() => GoRouter.of(context).push('/attendance'));
-                    },
+                    onTap: () => context.go('/attendance'),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -391,10 +385,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     icon: Icons.bar_chart_rounded,
                     label: 'Stats',
                     color: const Color(0xFF854CF4),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Future.microtask(() => GoRouter.of(context).push('/stats'));
-                    },
+                    onTap: () => context.go('/stats'),
                   ),
                 ),
               ],
