@@ -1,3 +1,10 @@
+// backend/src/index.ts
+
+import dotenv from 'dotenv';
+import path from 'path';
+
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { bodyLimit } from 'hono/body-limit';
@@ -14,6 +21,13 @@ import {
   DESCRIPTOR_THRESHOLD,
   initFaceApi,
 } from './face-recognition.js';
+
+import edprowiseClient from "../src/services/edprowiseClient.js"
+// ─── MongoDB Connection ───────────────────────────────────────────────────────
+
+// ─── Debug: Check if env variables are loaded ────────────────────────────────
+console.log('[Config] EDPROWISE_ATTENDANCE_URL:', process.env.EDPROWISE_ATTENDANCE_URL);
+console.log('[Config] MONGO_URI:', process.env.MONGO_URI ? '✅ Loaded' : '❌ Not loaded');
 
 // ─── MongoDB Connection ───────────────────────────────────────────────────────
 
@@ -108,6 +122,11 @@ async function generateUniqueEmployeeId(): Promise<string> {
   return id;
 }
 
+function verifyEdprowisePassword(plainPassword: string, storedHash: string, salt: string): boolean {
+  const hash = crypto.pbkdf2Sync(plainPassword, salt, 100000, 64, 'sha512').toString('hex');
+  return hash === storedHash;
+}
+
 // ─── Schools ─────────────────────────────────────────────────────────────────
 
 app.get('/schools', async (c) => {
@@ -122,29 +141,54 @@ app.get('/schools', async (c) => {
   return c.json(schools.map((s) => ({ ...serializeSchool(s), employeeCount: countMap[s._id.toString()] ?? 0 })));
 });
 
-app.get('/schools/:id', async (c) => {
-  const school = await School.findById(c.req.param('id')).lean();
+app.get('/schools/:schoolCode', async (c) => {
+  const school = await School.findOne({ schoolCode: c.req.param('schoolCode') }).lean();
   if (!school) return c.json({ error: 'School not found' }, 404);
   return c.json(serializeSchool(school));
 });
 
+// api to be called 
 app.post('/schools', async (c) => {
-  const body = await c.req.json<{ name: string; address?: string; phone?: string; email?: string }>();
-  if (!body.name) return c.json({ error: 'name is required' }, 400);
+  const body = await c.req.json<{ 
+    name: string; 
+    address?: string; 
+    phone?: string; 
+    email?: string;
+    schoolCode: string;  
+  }>();
+  
+  if (!body.name) {
+    return c.json({ error: 'name is required' }, 400);
+  }
+  
+  if (!body.schoolCode) {
+    return c.json({ error: 'schoolCode is required' }, 400);
+  }
+  
   try {
-    const schoolCode = await generateUniqueSchoolCode();
+    
+    const existingSchool = await School.findOne({ schoolCode: body.schoolCode });
+    if (existingSchool) {
+      console.log(`[Schools] School already exists: ${body.schoolCode}`);
+      return c.json(serializeSchool(existingSchool.toObject()), 200);
+    }
+    
     const school = await School.create({
-      schoolCode,
+      schoolCode: body.schoolCode,
       name: body.name.trim(),
       address: body.address ?? '',
       phone: body.phone ?? '',
       email: body.email ?? '',
     });
+    
+    console.log(`[Schools] School created successfully: ${body.schoolCode}`);
     return c.json(serializeSchool(school.toObject()), 201);
   } catch (err: any) {
+    console.error('[Schools] Create error:', err);
     return c.json({ error: 'Failed to create school' }, 500);
   }
 });
+
 
 app.put('/schools/:id', async (c) => {
   const body = await c.req.json<{ name?: string; address?: string; phone?: string; email?: string }>();
@@ -162,29 +206,49 @@ app.delete('/schools/:id', async (c) => {
 // Create a school_admin user for a given school
 app.post('/schools/:id/admin', async (c) => {
   const school = await School.findById(c.req.param('id')).lean();
-  if (!school) return c.json({ error: 'School not found' }, 404);
-  const body = await c.req.json<{ loginId: string; email: string; password: string }>();
+  if (!school) {
+    return c.json({ error: 'School not found' }, 404);
+  }
+  
+  const body = await c.req.json<{ loginId: string; email: string; password: string; salt?: string }>();
+  
   if (!body.loginId || !body.email || !body.password) {
     return c.json({ error: 'loginId, email and password are required' }, 400);
   }
-  if (!PASSWORD_REGEX.test(body.password)) {
-    return c.json({ error: 'Password must be at least 8 chars with 1 uppercase, 1 number and 1 symbol' }, 400);
-  }
+  
   try {
-    const passwordHash = await bcrypt.hash(body.password, 12);
-    const user = await User.create({
+    // Create user with explicit type handling
+    const userData: any = {
       loginId: body.loginId,
       email: body.email,
-      passwordHash,
+      passwordHash: body.password,
       role: 'school_admin',
-      schoolId: c.req.param('id'),
-    });
-    return c.json({ id: user._id.toString(), loginId: user.loginId, email: user.email, role: 'school_admin', schoolId: c.req.param('id') }, 201);
+      schoolId: school.schoolCode,
+    };
+    
+    // Only add salt if it exists
+    if (body.salt !== undefined && body.salt !== null) {
+      userData.salt = body.salt;
+    }
+    
+    const user = await User.create(userData);
+    
+    return c.json(
+      {
+        id: user._id.toString(),
+        loginId: user.loginId,
+        email: user.email,
+        role: user.role,
+        schoolId: user.schoolId,
+      },
+      201
+    );
   } catch (err: any) {
     if (err.code === 11000) {
       const field = err.keyPattern?.loginId ? 'Login ID' : 'Email';
       return c.json({ error: `${field} already exists` }, 409);
     }
+    console.error('[Admin Create Error]:', err);
     return c.json({ error: 'Failed to create school admin' }, 500);
   }
 });
@@ -210,11 +274,12 @@ app.post('/employees', async (c) => {
     grade?: string; category?: string; gender?: string; mobile?: string;
   }>();
   if (!body.name) return c.json({ error: 'name is required' }, 400);
+  if (!body.employeeId) return c.json({ error: 'employeeId is required' }, 400);
+  
   try {
-    const employeeId = body.employeeId?.trim() || await generateUniqueEmployeeId();
     const emp = await Employee.create({
       schoolId: body.schoolId ?? null,
-      employeeId,
+      employeeId: body.employeeId.trim(),
       name: body.name,
       designation: body.designation ?? '',
       grade: body.grade ?? '',
@@ -296,6 +361,8 @@ app.post('/employees/:id/enroll', async (c) => {
   return c.json({ success: true, message: 'Face enrolled successfully' });
 });
 
+
+
 // ─── Attendance Scan ──────────────────────────────────────────────────────────
 
 app.post('/attendance/scan', async (c) => {
@@ -350,7 +417,7 @@ app.post('/attendance/scan', async (c) => {
     const endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
 
     const alreadyMarked = await AttendanceRecord.findOne({
-      employeeId: bestMatch._id.toString(),
+      employeeId: bestMatch.employeeId,
       type: scanType,
       status: 'present',
       timestamp: { $gte: startOfDay, $lte: endOfDay },
@@ -361,14 +428,14 @@ app.post('/attendance/scan', async (c) => {
         matched: true,
         alreadyMarked: true,
         type: scanType,
-        employee: { id: bestMatch._id.toString(), name: bestMatch.name },
+        employee: { id: bestMatch.employeeId, name: bestMatch.name }, 
         message: `${bestMatch.name} already ${scanType === 'checkin' ? 'checked in' : 'checked out'} today.`,
       });
     }
 
     const record = await AttendanceRecord.create({
       schoolId: bestMatch.schoolId ?? null,
-      employeeId: bestMatch._id.toString(),
+      employeeId: bestMatch.employeeId,
       employeeName: bestMatch.name,
       department: bestMatch.designation ?? '',
       timestamp: now,
@@ -377,11 +444,26 @@ app.post('/attendance/scan', async (c) => {
       photoBase64: body.photoBase64,
     });
 
+    // ========== SYNC TO EDPROWISE ==========
+    try {
+      await edprowiseClient.syncAttendance({
+        schoolId: bestMatch.schoolId,
+        employeeId: bestMatch.employeeId,
+        timestamp: now,
+        type: scanType
+      });
+      console.log(`[Edprowise] Attendance synced for ${bestMatch.employeeId} - ${scanType}`);
+    } catch (syncError) {
+      console.error('[Edprowise] Sync failed:', syncError);
+      // Don't fail the scan if sync fails
+    }
+    // ========== END SYNC ==========
+
     return c.json({
       matched: true,
       alreadyMarked: false,
       type: scanType,
-      employee: { id: bestMatch._id.toString(), name: bestMatch.name },
+      employee: { id: bestMatch.employeeId, name: bestMatch.name },
       message: scanType === 'checkin'
         ? `Welcome, ${bestMatch.name}! Check-in recorded.`
         : `Goodbye, ${bestMatch.name}! Check-out recorded.`,
@@ -483,13 +565,25 @@ app.post('/auth/register', async (c) => {
   }
 });
 
+
 app.post('/auth/login', async (c) => {
   const body = await c.req.json<{ loginId: string; password: string }>();
   if (!body.loginId || !body.password) return c.json({ error: 'loginId and password are required' }, 400);
+  
   const user = await User.findOne({ loginId: body.loginId });
   if (!user) return c.json({ error: 'Invalid login ID or password' }, 401);
-  const valid = await bcrypt.compare(body.password, user.passwordHash);
-  if (!valid) return c.json({ error: 'Invalid login ID or password' }, 401);
+  
+  let valid = false;
+  if (user.passwordHash.startsWith('$2')) {
+    
+    valid = await bcrypt.compare(body.password, user.passwordHash);
+  } else if (user.salt) {  
+    valid = verifyEdprowisePassword(body.password, user.passwordHash, user.salt);
+  } else {   
+    valid = (body.password === user.passwordHash);
+  }
+  
+  if (!valid) return c.json({ error: 'Invalid login ID or password' }, 401); 
   return c.json({
     id: user._id.toString(),
     loginId: user.loginId,
@@ -498,6 +592,7 @@ app.post('/auth/login', async (c) => {
     schoolId: user.schoolId ?? null,
   });
 });
+
 
 app.post('/auth/forgot-password', async (c) => {
   const body = await c.req.json<{ email: string }>();
@@ -565,6 +660,43 @@ app.post('/auth/verify-pin', async (c) => {
   if (!user.profilePinHash) return c.json({ valid: false, error: 'No PIN set' }, 400);
   const valid = await bcrypt.compare(body.pin, user.profilePinHash);
   return c.json({ valid });
+});
+
+
+app.post('/auth/update-password', async (c) => {
+  const body = await c.req.json<{ loginId: string; schoolId: string; passwordHash: string; salt: string }>();
+  
+  if (!body.loginId || !body.schoolId || !body.passwordHash || !body.salt) {
+    return c.json({ error: 'loginId, schoolId, passwordHash and salt are required' }, 400);
+  }
+  
+  try {
+    // Find user by both loginId AND schoolId
+    const user = await User.findOne({ 
+      loginId: body.loginId,
+      schoolId: body.schoolId 
+    });
+    
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404);
+    }
+    
+    // Update password hash and salt
+    user.passwordHash = body.passwordHash;
+    user.salt = body.salt;
+    
+    await user.save();
+    
+    console.log(`[Password Update] Password updated for user: ${body.loginId} (School: ${body.schoolId})`);
+    
+    return c.json({ 
+      success: true, 
+      message: 'Password updated successfully' 
+    }, 200);
+  } catch (err: any) {
+    console.error('[Password Update Error]:', err);
+    return c.json({ error: 'Failed to update password' }, 500);
+  }
 });
 
 export default { fetch: app.fetch, port: 8080 };

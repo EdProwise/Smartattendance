@@ -1,0 +1,28 @@
+{
+  "buildFiles": [
+    "/Users/nikita/development/flutter/packages/flutter_tools/gradle/src/main/scripts/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/Users/nikita/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/Users/nikita/Desktop/app-release/Smartattendance/flutter_app/android/app/.cxx/debug/406h1s6z/x86_64",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/Users/nikita/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/Users/nikita/Desktop/app-release/Smartattendance/flutter_app/android/app/.cxx/debug/406h1s6z/x86_64",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {},
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/Users/nikita/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/Users/nikita/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++.lld"
+    }
+  },
+  "cFileExtensions": [],
+  "cppFileExtensions": []
+}

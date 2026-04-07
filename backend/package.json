@@ -16,8 +16,10 @@
     "@tensorflow/tfjs": "^4.22.0",
     "@tensorflow/tfjs-backend-wasm": "^4.22.0",
     "@vladmandic/face-api": "^1.7.15",
+    "axios": "^1.14.0",
     "bcryptjs": "^3.0.3",
     "canvas": "^3.2.2",
+    "dotenv": "^17.4.0",
     "hono": "^4.9.10",
     "jimp": "^1.6.0",
     "mongoose": "^9.2.4"
@@ -27,6 +29,7 @@
     "@eslint/js": "^9.25.1",
     "@types/bcryptjs": "^3.0.0",
     "@types/bun": "latest",
+    "@types/dotenv": "^6.1.1",
     "@typescript-eslint/eslint-plugin": "^8.21.0",
     "@typescript-eslint/parser": "^8.21.0",
     "concurrently": "^9.2.1",

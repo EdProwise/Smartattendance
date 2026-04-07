@@ -1,0 +1,2 @@
+/Users/nikita/Desktop/app-release/Smartattendance/flutter_app/android/app/.cxx/debug/406h1s6z/arm64-v8a/CMakeFiles/edit_cache.dir
+/Users/nikita/Desktop/app-release/Smartattendance/flutter_app/android/app/.cxx/debug/406h1s6z/arm64-v8a/CMakeFiles/rebuild_cache.dir

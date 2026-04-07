@@ -1,3 +1,5 @@
+// backend/src/models/AttendanceRecord.ts
+
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IAttendanceRecord extends Document {
