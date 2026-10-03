@@ -26,14 +26,13 @@ import edprowiseClient from "../src/services/edprowiseClient.js"
 // ─── MongoDB Connection ───────────────────────────────────────────────────────
 
 // ─── Debug: Check if env variables are loaded ────────────────────────────────
-console.log('[Config] EDPROWISE_ATTENDANCE_URL:', process.env.EDPROWISE_ATTENDANCE_URL);
-console.log('[Config] MONGO_URI:', process.env.MONGO_URI ? '✅ Loaded' : '❌ Not loaded');
 
 // ─── MongoDB Connection ───────────────────────────────────────────────────────
 
-const MONGO_URI =
-  process.env.MONGO_URI ||
-  'mongodb://edprowise_db_user:PTx7QbEglhESE9Ie@ac-hrlyz9q-shard-00-00.wcjw48r.mongodb.net:27017,ac-hrlyz9q-shard-00-01.wcjw48r.mongodb.net:27017,ac-hrlyz9q-shard-00-02.wcjw48r.mongodb.net:27017/Smartattendance?ssl=true&replicaSet=atlas-zshpxx-shard-0&authSource=admin&retryWrites=true&w=majority';
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  throw new Error('MONGO_URI is not set. Copy backend/.env.example to backend/.env and fill it in.');
+}
 
 async function seedDefaultAdmin() {
   try {
@@ -699,4 +698,4 @@ app.post('/auth/update-password', async (c) => {
   }
 });
 
-export default { fetch: app.fetch, port: 8080 };
+export default { fetch: app.fetch, port: Number(process.env.PORT) || 8080 };

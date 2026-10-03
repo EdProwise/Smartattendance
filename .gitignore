@@ -18,10 +18,5 @@ Thumbs.db
 *.swp
 *.swo
 
-# Environment
-.env
-.env.local
-.env.*.local
-
 # Orchids
 .orchids/

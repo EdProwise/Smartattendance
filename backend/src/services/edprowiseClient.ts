@@ -2,8 +2,6 @@
 
 import axios from 'axios';
 
-const EDPROWISE_ATTENDANCE_URL =
-  process.env.EDPROWISE_ATTENDANCE_URL || 'http://localhost:3001/api/payrollModule';
 
 interface AttendanceData {
   schoolId: string | null;
@@ -20,6 +18,13 @@ interface SyncResponse {
 
 const edprowiseClient = {
   async syncAttendance(attendanceData: AttendanceData): Promise<SyncResponse> {
+    const baseUrl = process.env.EDPROWISE_ATTENDANCE_URL;
+    if (!baseUrl) {
+      const error = 'EDPROWISE_ATTENDANCE_URL is not set; attendance was not synced';
+      console.error('[Edprowise]', error);
+      return { success: false, error };
+    }
+
     try {
       const payload = {
         schoolId: attendanceData.schoolId,
@@ -31,7 +36,7 @@ const edprowiseClient = {
       console.log('[Edprowise] Syncing attendance:', payload);
 
       const response = await axios.post(
-        `${EDPROWISE_ATTENDANCE_URL}/sync-attendance-from-smart-class`,
+        `${baseUrl}/sync-attendance-from-smart-class`,
         payload,
         {
           headers: { 'Content-Type': 'application/json' },
