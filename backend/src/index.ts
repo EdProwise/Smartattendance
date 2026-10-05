@@ -156,19 +156,23 @@ app.post('/schools', async (c) => {
     schoolCode: string;  
   }>();
   
+  console.log('[POST /schools] received body:', JSON.stringify(body));
+
   if (!body.name) {
+    console.error('[POST /schools] ❌ rejected: name is required', { body });
     return c.json({ error: 'name is required' }, 400);
   }
-  
+
   if (!body.schoolCode) {
+    console.error('[POST /schools] ❌ rejected: schoolCode is required', { body });
     return c.json({ error: 'schoolCode is required' }, 400);
   }
-  
+
   try {
-    
+
     const existingSchool = await School.findOne({ schoolCode: body.schoolCode });
     if (existingSchool) {
-      console.log(`[Schools] School already exists: ${body.schoolCode}`);
+      console.log(`[Schools] ℹ️ School already exists: ${body.schoolCode} (returning existing)`);
       return c.json(serializeSchool(existingSchool.toObject()), 200);
     }
     
@@ -180,10 +184,12 @@ app.post('/schools', async (c) => {
       email: body.email ?? '',
     });
     
-    console.log(`[Schools] School created successfully: ${body.schoolCode}`);
+    console.log(
+      `[Schools] ✅ School stored successfully: ${body.schoolCode} (${school.name}) _id: ${String(school._id)}`,
+    );
     return c.json(serializeSchool(school.toObject()), 201);
   } catch (err: any) {
-    console.error('[Schools] Create error:', err);
+    console.error('[Schools] ❌ Create error for', body.schoolCode, ':', err?.message, err);
     return c.json({ error: 'Failed to create school' }, 500);
   }
 });
@@ -204,14 +210,20 @@ app.delete('/schools/:id', async (c) => {
 
 // Create a school_admin user for a given school
 app.post('/schools/:id/admin', async (c) => {
-  const school = await School.findById(c.req.param('id')).lean();
+  const schoolDocId = c.req.param('id');
+  console.log('[POST /schools/:id/admin] school _id:', schoolDocId);
+
+  const school = await School.findById(schoolDocId).lean();
   if (!school) {
+    console.error('[POST /schools/:id/admin] ❌ School not found for _id:', schoolDocId);
     return c.json({ error: 'School not found' }, 404);
   }
-  
+
   const body = await c.req.json<{ loginId: string; email: string; password: string; salt?: string }>();
-  
+  console.log('[POST /schools/:id/admin] received:', { loginId: body.loginId, email: body.email, hasSalt: body.salt != null });
+
   if (!body.loginId || !body.email || !body.password) {
+    console.error('[POST /schools/:id/admin] ❌ rejected: loginId, email and password are required');
     return c.json({ error: 'loginId, email and password are required' }, 400);
   }
   
@@ -231,7 +243,10 @@ app.post('/schools/:id/admin', async (c) => {
     }
     
     const user = await User.create(userData);
-    
+    console.log(
+      `[POST /schools/:id/admin] ✅ admin stored: loginId ${user.loginId} | schoolId ${user.schoolId} | _id ${String(user._id)}`,
+    );
+
     return c.json(
       {
         id: user._id.toString(),
@@ -245,9 +260,10 @@ app.post('/schools/:id/admin', async (c) => {
   } catch (err: any) {
     if (err.code === 11000) {
       const field = err.keyPattern?.loginId ? 'Login ID' : 'Email';
+      console.error(`[POST /schools/:id/admin] ❌ duplicate ${field} for loginId ${body.loginId}`);
       return c.json({ error: `${field} already exists` }, 409);
     }
-    console.error('[Admin Create Error]:', err);
+    console.error('[Admin Create Error] for loginId', body.loginId, ':', err?.message, err);
     return c.json({ error: 'Failed to create school admin' }, 500);
   }
 });
@@ -272,9 +288,19 @@ app.post('/employees', async (c) => {
     schoolId?: string; employeeId?: string; name: string; designation?: string;
     grade?: string; category?: string; gender?: string; mobile?: string;
   }>();
-  if (!body.name) return c.json({ error: 'name is required' }, 400);
-  if (!body.employeeId) return c.json({ error: 'employeeId is required' }, 400);
-  
+
+  // ── Diagnostic: log exactly what Payroll sent us.
+  console.log('[POST /employees] received body:', JSON.stringify(body));
+
+  if (!body.name) {
+    console.error('[POST /employees] ❌ rejected: name is required', { body });
+    return c.json({ error: 'name is required' }, 400);
+  }
+  if (!body.employeeId) {
+    console.error('[POST /employees] ❌ rejected: employeeId is required', { body });
+    return c.json({ error: 'employeeId is required' }, 400);
+  }
+
   try {
     const emp = await Employee.create({
       schoolId: body.schoolId ?? null,
@@ -286,9 +312,20 @@ app.post('/employees', async (c) => {
       gender: body.gender ?? '',
       mobile: body.mobile ?? '',
     });
+    console.log(
+      '[POST /employees] ✅ created employee _id:', String(emp._id),
+      '| employeeId:', emp.employeeId, '| schoolId:', emp.schoolId,
+    );
     return c.json(serializeEmployee(emp.toObject()), 201);
   } catch (err: any) {
-    if (err.code === 11000) return c.json({ error: 'Employee ID already exists in this school' }, 409);
+    if (err.code === 11000) {
+      console.error(
+        '[POST /employees] ❌ duplicate key (11000): employeeId already exists in this school',
+        { employeeId: body.employeeId, schoolId: body.schoolId, keyValue: err.keyValue },
+      );
+      return c.json({ error: 'Employee ID already exists in this school' }, 409);
+    }
+    console.error('[POST /employees] ❌ failed to create employee:', err?.message, err);
     return c.json({ error: 'Failed to create employee' }, 500);
   }
 });
